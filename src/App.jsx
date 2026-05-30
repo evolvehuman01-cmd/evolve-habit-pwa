@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 
 // ── CONFIG ────────────────────────────────────────────────
-const APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZweQ_P43NjgQ-s9hQNZ3VPGu7E35g4_Un-Ffrt3NvUwLS82pOWuA61iIABpb4mg6Q/exec'
 
 // ── BRAND ─────────────────────────────────────────────────
 const C = {
