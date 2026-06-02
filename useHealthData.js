@@ -4,7 +4,7 @@
 // 2. Google Fit REST API (requires OAuth)
 // Falls back to manual entry gracefully
 
-const GOOGLE_FIT_CLIENT_ID = 'YOUR_GOOGLE_FIT_CLIENT_ID_HERE'
+const GOOGLE_FIT_CLIENT_ID = '1072939218676-93pnpm1iseqjue2f79lrgpkdt2uesc16.apps.googleusercontent.com'
 const GOOGLE_FIT_SCOPES = [
   'https://www.googleapis.com/auth/fitness.activity.read',
   'https://www.googleapis.com/auth/fitness.sleep.read',
