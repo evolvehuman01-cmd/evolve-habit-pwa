@@ -11,8 +11,8 @@ import {
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 
 // ── CONFIG ────────────────────────────────────────────────
-const APPS_SCRIPT_URL    = 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'
-const CHECKIN_SCRIPT_URL = 'YOUR_CHECKIN_APPS_SCRIPT_URL_HERE'
+const APPS_SCRIPT_URL    = 'https://script.google.com/macros/s/AKfycbyE5QFzwd-FD2sIe00GY5G-qMv2Qg3bFFTga27sQ5xJlJ9G2x9HLeNpMmpbdjvcaKyi/exec'
+const CHECKIN_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyU2Ic2aczSqqDbb5oRb55s8iboXTIev_tVnUSXQxwySw78MZ5tsVibD-psRlvEii2QHg/exec'
 const REPORT_SCRIPT_URL  = 'YOUR_REPORT_APPS_SCRIPT_URL_HERE'
 
 // ── BRAND ─────────────────────────────────────────────────
