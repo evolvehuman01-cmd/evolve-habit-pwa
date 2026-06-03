@@ -598,8 +598,52 @@ function SettingsScreen({ client, fitToken, onSignOut, onDeleteRequest, onConnec
       {/* Notifications */}
       <Card style={{padding:22,marginBottom:14}}>
         <div style={{...T.super,marginBottom:10}}>Notifications</div>
-        <div style={{fontWeight:600,fontSize:16,color:NAVY,marginBottom:6}}>Daily Reminder — 8pm</div>
-        <div style={{...T.small,marginBottom:14}}>To update notification settings, go to your phone's Settings → Notifications → Evolve:Wellbeing.</div>
+        <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Daily Reminder — 8pm</div>
+        <div style={{...T.small,marginBottom:18,lineHeight:1.6}}>
+          You receive a daily reminder at 8pm to log your habits. Use the buttons below to manage notification permissions directly.
+        </div>
+
+        {/* Enable / re-enable */}
+        {'Notification' in window && Notification.permission !== 'granted' && (
+          <button onClick={async () => {
+            const perm = await Notification.requestPermission()
+            if (perm === 'granted') {
+              navigator.serviceWorker.ready.then(r => r.active?.postMessage({ type: 'SCHEDULE_REMINDER' }))
+            }
+          }} style={{width:'100%',background:ORANGE,border:'none',borderRadius:10,padding:'13px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:17,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer',marginBottom:10}}>
+            Enable Reminders
+          </button>
+        )}
+
+        {'Notification' in window && Notification.permission === 'granted' && (
+          <div style={{background:GREEN_LIGHT,border:`1px solid ${GREEN}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:18}}>✓</span>
+            <div style={{fontWeight:600,fontSize:15,color:GREEN}}>Reminders are enabled</div>
+          </div>
+        )}
+
+        {/* Deep link to phone settings — works on iOS and Android */}
+        <div style={{...T.small,marginBottom:12,lineHeight:1.6}}>
+          To turn reminders off or manage delivery settings, open your phone's notification settings for this app:
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          {/* iOS */}
+          <button onClick={() => window.open('app-settings:')} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'12px',color:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,textTransform:'uppercase',letterSpacing:'0.04em',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:5}}>
+            <span style={{fontSize:20}}>📱</span>
+            iPhone Settings
+          </button>
+          {/* Android */}
+          <button onClick={() => {
+            // Android intent deep link — opens notification settings for the PWA
+            try { window.open('intent://settings#Intent;scheme=android-app;end') } catch { window.open('https://support.google.com/android/answer/9079661') }
+          }} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'12px',color:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,textTransform:'uppercase',letterSpacing:'0.04em',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:5}}>
+            <span style={{fontSize:20}}>🤖</span>
+            Android Settings
+          </button>
+        </div>
+        <div style={{...T.tiny,marginTop:12,lineHeight:1.6,fontSize:12}}>
+          On iPhone: tap iPhone Settings → scroll to Safari → Notifications. On Android: tap Android Settings → Apps → your browser → Notifications.
+        </div>
       </Card>
 
       {/* Delete account */}
@@ -810,20 +854,7 @@ export default function App() {
 
           <StreakCard ls={logStreak} ts={targetStreak}/>
 
-          {/* Google Fit connect — dismissible */}
-          {!fitToken&&!LS.get('fit_dismissed')&&(
-            <div style={{background:WHITE,borderRadius:12,padding:'14px 16px',marginBottom:12,border:'1px solid rgba(28,43,58,0.1)',display:'flex',alignItems:'center',gap:12,boxShadow:'0 1px 4px rgba(28,43,58,0.07)'}}>
-              <span style={{fontSize:22}}>🔗</span>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:700,fontSize:16,color:NAVY,marginBottom:2}}>Connect Google Fit</div>
-                <div style={{...T.tiny,fontSize:13}}>Auto-fill steps and sleep from your phone</div>
-              </div>
-              <div style={{display:'flex',flexDirection:'column',gap:6,flexShrink:0}}>
-                <button onClick={initiateGoogleFitAuth} style={{background:ORANGE,border:'none',borderRadius:8,padding:'8px 14px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>Connect</button>
-                <button onClick={()=>{LS.set('fit_dismissed',true);setShowFitDismiss(true)}} style={{background:'transparent',border:'none',color:'#a0aec0',fontFamily:"'Barlow',sans-serif",fontSize:12,cursor:'pointer',textAlign:'center'}}>Don't show again</button>
-              </div>
-            </div>
-          )}
+
 
           {/* Check-ins */}
           {weeklyDue&&<CheckInCard type="weekly" questions={WEEKLY_QUESTIONS} onSubmit={handleCheckIn} client={client}/>}
