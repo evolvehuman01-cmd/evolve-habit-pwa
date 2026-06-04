@@ -36,15 +36,43 @@ const T = {
   tiny:  { fontFamily:"'Barlow',sans-serif", fontWeight:400, fontSize:13, color:'#a0aec0' },
 }
 
-// ── HABITS ────────────────────────────────────────────────
+// ── DEFAULT TARGETS (evidence-based fallbacks) ────────────
+const DEFAULT_TARGETS = {
+  sleep: 7.5, steps: 8000, hydration: 2.5,
+  meals: 3, mindfulness: 10, mobility: 10,
+  stress: 5, mood: 6, energy: 6,
+}
+
+// ── HABITS — targets applied dynamically from coach ───────
 const ALL_HABITS = [
-  { id:'sleep',       label:'Sleep Routine', icon:'🌙', desc:'Hours of sleep last night',        unit:'hrs',   min:0, max:14,    step:0.5, target:7.5,  green:7,    amber:6,    autoFill:'sleep' },
-  { id:'steps',       label:'Daily Steps',   icon:'👟', desc:'Total steps today',                 unit:'steps', min:0, max:30000, step:100, target:8000, green:8000, amber:5000, autoFill:'steps' },
-  { id:'hydration',   label:'Hydration',     icon:'💧', desc:'Total fluid intake today',          unit:'L',     min:0, max:6,     step:0.25,target:2.5,  green:2,    amber:1.5,  autoFill:null },
-  { id:'meals',       label:'Meal Structure',icon:'🥗', desc:'Planned, structured meals today',   unit:'meals', min:0, max:6,     step:1,   target:3,    green:3,    amber:2,    autoFill:null },
-  { id:'mindfulness', label:'Mindfulness',   icon:'🧠', desc:'Mindfulness or breathwork today',  unit:'min',   min:0, max:60,    step:1,   target:10,   green:10,   amber:5,    autoFill:null },
-  { id:'mobility',    label:'Mobility',      icon:'🧘', desc:'Dedicated mobility or flexibility',unit:'min',   min:0, max:120,   step:5,   target:10,   green:10,   amber:5,    autoFill:null },
+  { id:'sleep',       label:'Sleep Routine', icon:'🌙', desc:'Hours of sleep last night',        unit:'hrs',   min:0, max:14,    step:0.5, autoFill:'sleep' },
+  { id:'steps',       label:'Daily Steps',   icon:'👟', desc:'Total steps today',                 unit:'steps', min:0, max:30000, step:100, autoFill:'steps' },
+  { id:'hydration',   label:'Hydration',     icon:'💧', desc:'Total fluid intake today',          unit:'L',     min:0, max:6,     step:0.25,autoFill:null },
+  { id:'meals',       label:'Meal Structure',icon:'🥗', desc:'Planned, structured meals today',   unit:'meals', min:0, max:6,     step:1,   autoFill:null },
+  { id:'mindfulness', label:'Mindfulness',   icon:'🧠', desc:'Mindfulness or breathwork today',  unit:'min',   min:0, max:60,    step:1,   autoFill:null },
+  { id:'mobility',    label:'Mobility',      icon:'🧘', desc:'Dedicated mobility or flexibility',unit:'min',   min:0, max:120,   step:5,   autoFill:null },
 ]
+
+// Merge static habit definitions with dynamic targets from coach
+function buildHabitsWithTargets(targets) {
+  const t = { ...DEFAULT_TARGETS, ...targets }
+  return ALL_HABITS.map(h => ({
+    ...h,
+    target: t[h.id],
+    green:  h.id === 'steps' ? t.steps      :
+            h.id === 'sleep' ? t.sleep       :
+            h.id === 'hydration' ? t.hydration :
+            h.id === 'meals' ? t.meals        :
+            h.id === 'mindfulness' ? t.mindfulness :
+            h.id === 'mobility' ? t.mobility  : t[h.id],
+    amber:  h.id === 'steps' ? t.steps * 0.6      :
+            h.id === 'sleep' ? t.sleep - 1          :
+            h.id === 'hydration' ? t.hydration * 0.7 :
+            h.id === 'meals' ? Math.max(1, t.meals - 1) :
+            h.id === 'mindfulness' ? t.mindfulness * 0.5 :
+            h.id === 'mobility' ? t.mobility * 0.5   : t[h.id] * 0.8,
+  }))
+}
 
 const METRICS = [
   { id:'stressRPE', label:'Stress',   icon:'⚡', invert:true,  note:'1 = very calm · 10 = extreme' },
@@ -548,7 +576,7 @@ function CoachToast({ onDone }) {
 }
 
 // ── CLIENT SETTINGS SCREEN ────────────────────────────────
-function SettingsScreen({ client, fitToken, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit }) {
+function SettingsScreen({ client, fitToken, clientTargets, targetSource, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const handleDelete = () => {
@@ -595,7 +623,39 @@ function SettingsScreen({ client, fitToken, onSignOut, onDeleteRequest, onConnec
         )}
       </Card>
 
-      {/* Notifications */}
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Your Targets</div>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+          <div style={{width:10,height:10,borderRadius:'50%',background:targetSource==='coach'?GREEN:AMBER,flexShrink:0}}/>
+          <div style={{fontWeight:600,fontSize:16,color:NAVY}}>
+            {targetSource==='coach' ? 'Coach-set targets active' : 'Default targets active'}
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          {[
+            {label:'Sleep',    value:`${clientTargets.sleep}h`,        icon:'🌙'},
+            {label:'Steps',    value:Number(clientTargets.steps).toLocaleString(), icon:'👟'},
+            {label:'Hydration',value:`${clientTargets.hydration}L`,    icon:'💧'},
+            {label:'Meals',    value:`${clientTargets.meals} meals`,   icon:'🥗'},
+            {label:'Mindfulness',value:`${clientTargets.mindfulness}min`,icon:'🧠'},
+            {label:'Mobility', value:`${clientTargets.mobility}min`,   icon:'🧘'},
+          ].map(t=>(
+            <div key={t.label} style={{background:CREAM,borderRadius:9,padding:'10px 12px',display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:16}}>{t.icon}</span>
+              <div>
+                <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:18,color:NAVY}}>{t.value}</div>
+                <div style={{...T.tiny,fontSize:12}}>{t.label}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {targetSource==='defaults'&&(
+          <div style={{...T.tiny,marginTop:12,lineHeight:1.6,fontSize:13}}>Your coach hasn't set individual targets yet. Evidence-based defaults are in use.</div>
+        )}
+        {clientTargets.notes&&(
+          <div style={{marginTop:12,background:`${ORANGE}10`,borderLeft:`3px solid ${ORANGE}`,borderRadius:8,padding:'10px 12px',fontSize:14,color:'#4a5568',lineHeight:1.6}}>{clientTargets.notes}</div>
+        )}
+      </Card>
       <Card style={{padding:22,marginBottom:14}}>
         <div style={{...T.super,marginBottom:10}}>Notifications</div>
         <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Daily Reminder — 8pm</div>
@@ -698,12 +758,14 @@ export default function App() {
   const [fitToken,        setFitToken]        = useState(null)
   const [autoFilled,      setAutoFilled]      = useState({})
   const [showFitDismiss,  setShowFitDismiss]  = useState(false)
+  const [clientTargets,   setClientTargets]   = useState(DEFAULT_TARGETS)
+  const [targetSource,    setTargetSource]    = useState("defaults")
 
   const tapCount = useRef(0), tapTimer = useRef(null)
   const todayKey  = todayISO()
   const promptIdx = new Date().getDay()
 
-  const visibleHabits   = ALL_HABITS.filter(h=>activeHabits.includes(h.id))
+  const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>activeHabits.includes(h.id))
   const completedHabits = visibleHabits.filter(h=>habitValues[h.id]!==undefined&&habitValues[h.id]!==''&&habitValues[h.id]!==null)
   const allGreen        = visibleHabits.length>0 && visibleHabits.every(h=>Number(habitValues[h.id]||0)>=h.green)
 
@@ -762,6 +824,33 @@ export default function App() {
     }
     setWeekData(last7)
   },[client])
+
+  // ── Fetch coach-set targets ────────────────────────────
+  useEffect(()=>{
+    if (!client || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') return
+    // Check cache first — targets don't change daily
+    const cached    = LS.get(`targets_${client.name}`)
+    const cachedAt  = LS.get(`targets_${client.name}_ts`)
+    const oneDay    = 86400000
+    if (cached && cachedAt && Date.now() - cachedAt < oneDay) {
+      setClientTargets(cached.targets)
+      setTargetSource(cached.source || 'coach')
+      return
+    }
+    // Fetch fresh from Apps Script
+    const clientId = client.name.trim().toLowerCase().replace(/\s+/g, '-')
+    fetch(`${APPS_SCRIPT_URL}?action=getTargets&clientId=${encodeURIComponent(clientId)}`)
+      .then(r => r.json())
+      .then(json => {
+        if (json.success && json.targets) {
+          setClientTargets(json.targets)
+          setTargetSource(json.source || 'defaults')
+          LS.set(`targets_${client.name}`, { targets: json.targets, source: json.source })
+          LS.set(`targets_${client.name}_ts`, Date.now())
+        }
+      })
+      .catch(() => {}) // Silent fail — defaults already set
+  }, [client])
 
   // ── Load + save today ──────────────────────────────────
   useEffect(()=>{const s=LS.get(`log_${todayKey}`);if(s){setHabitValues(s.habits||{});setMetricValues(s.metrics||{stressRPE:5,mood:6,energy:6,digestion:7});setCyclePhase(s.cyclePhase||'');setReflection(s.reflection||'')}},[todayKey])
@@ -1028,6 +1117,8 @@ export default function App() {
         <SettingsScreen
           client={client}
           fitToken={fitToken}
+          clientTargets={clientTargets}
+          targetSource={targetSource}
           onSignOut={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false)}}
           onDeleteRequest={()=>{}}
           onConnectFit={initiateGoogleFitAuth}
