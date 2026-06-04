@@ -4,7 +4,7 @@ import {
   CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ReferenceLine, ComposedChart, Area
 } from 'recharts'
-import { getGoogleFitToken, initiateGoogleFitAuth, revokeGoogleFit, autoFillFromHealth } from './useHealthData.js'
+import { initiateGoogleFitAuth, checkFitConnection, fetchFitData, disconnectFit } from './useHealthData.js'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 
 // ── CONFIG ────────────────────────────────────────────────
@@ -540,15 +540,33 @@ function SetupScreen({ onComplete }) {
 }
 
 function NotifPrompt({ onDone }) {
-  const request=async()=>{if(!('Notification' in window)){onDone();return}const perm=await Notification.requestPermission();if(perm==='granted')navigator.serviceWorker.ready.then(r=>r.active?.postMessage({type:'SCHEDULE_REMINDER'}));onDone()}
+  const request = async () => {
+    try {
+      // Use OneSignal to request permission and subscribe
+      if (window.OneSignal) {
+        await window.OneSignal.Notifications.requestPermission()
+        // Tag the user with their client name so we can target them
+        // Tags are set in App after setup complete
+      }
+    } catch(err) {
+      console.warn('OneSignal permission request failed:', err)
+    }
+    onDone()
+  }
   return(
     <div style={{position:'fixed',inset:0,zIndex:9998,background:'rgba(28,43,58,0.65)',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
       <div style={{background:WHITE,borderRadius:18,padding:34,maxWidth:380,width:'100%',border:`2px solid ${ORANGE}`}}>
         <div style={{fontSize:44,marginBottom:18,textAlign:'center'}}>🔔</div>
         <div style={{...T.h2,fontSize:30,textAlign:'center',marginBottom:14}}>Daily Reminders</div>
-        <div style={{...T.body,textAlign:'center',marginBottom:30,color:'#4a5568'}}>Get a nudge at 8pm every evening to log your habits, and reminders for weekly check-ins every Sunday.</div>
-        <button onClick={request} style={{width:'100%',background:ORANGE,border:'none',borderRadius:12,padding:'16px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:19,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer',marginBottom:12}}>Enable Reminders</button>
-        <button onClick={onDone} style={{width:'100%',background:'transparent',border:'none',color:'#a0aec0',fontFamily:"'Barlow',sans-serif",fontSize:16,cursor:'pointer',padding:'8px'}}>Not now</button>
+        <div style={{...T.body,textAlign:'center',marginBottom:30,color:'#4a5568'}}>
+          Get a nudge at 8pm every evening to log your habits, and a reminder every Sunday for your weekly check-in.
+        </div>
+        <button onClick={request} style={{width:'100%',background:ORANGE,border:'none',borderRadius:12,padding:'16px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:19,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer',marginBottom:12}}>
+          Enable Reminders
+        </button>
+        <button onClick={onDone} style={{width:'100%',background:'transparent',border:'none',color:'#a0aec0',fontFamily:"'Barlow',sans-serif",fontSize:16,cursor:'pointer',padding:'8px'}}>
+          Not now
+        </button>
       </div>
     </div>
   )
@@ -576,6 +594,74 @@ function CoachToast({ onDone }) {
 }
 
 // ── CLIENT SETTINGS SCREEN ────────────────────────────────
+// ── ONESIGNAL TOGGLE ─────────────────────────────────────
+function OneSignalToggle() {
+  const [subscribed, setSubscribed] = useState(false)
+  const [loading,    setLoading]    = useState(true)
+
+  useEffect(() => {
+    const check = async () => {
+      try {
+        if (window.OneSignal) {
+          const isSubscribed = await window.OneSignal.User.PushSubscription.optedIn
+          setSubscribed(!!isSubscribed)
+        }
+      } catch {}
+      setLoading(false)
+    }
+    // OneSignal may not be ready immediately
+    const timer = setTimeout(check, 1500)
+    return () => clearTimeout(timer)
+  }, [])
+
+  const enable = async () => {
+    setLoading(true)
+    try {
+      await window.OneSignal.Notifications.requestPermission()
+      await window.OneSignal.User.PushSubscription.optIn()
+      setSubscribed(true)
+    } catch(err) { console.warn('OneSignal opt-in failed:', err) }
+    setLoading(false)
+  }
+
+  const disable = async () => {
+    setLoading(true)
+    try {
+      await window.OneSignal.User.PushSubscription.optOut()
+      setSubscribed(false)
+    } catch(err) { console.warn('OneSignal opt-out failed:', err) }
+    setLoading(false)
+  }
+
+  if (loading) return (
+    <div style={{...T.small, color:'#a0aec0'}}>Checking notification status...</div>
+  )
+
+  if (subscribed) return (
+    <div>
+      <div style={{background:GREEN_LIGHT, border:`1px solid ${GREEN}`, borderRadius:10, padding:'12px 14px', marginBottom:14, display:'flex', alignItems:'center', gap:10}}>
+        <span style={{fontSize:18}}>✓</span>
+        <div style={{fontWeight:600,fontSize:16,color:GREEN}}>Reminders are enabled</div>
+      </div>
+      <button onClick={disable} style={{background:CREAM, border:'1.5px solid rgba(28,43,58,0.18)', borderRadius:10, padding:'11px 20px', color:'#718096', fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, fontSize:15, textTransform:'uppercase', letterSpacing:'0.05em', cursor:'pointer'}}>
+        Turn Off Reminders
+      </button>
+    </div>
+  )
+
+  return (
+    <div>
+      <div style={{background:AMBER_LIGHT, border:`1px solid ${AMBER}`, borderRadius:10, padding:'12px 14px', marginBottom:14, display:'flex', alignItems:'center', gap:10}}>
+        <span style={{fontSize:18}}>🔕</span>
+        <div style={{fontWeight:600,fontSize:16,color:AMBER}}>Reminders are off</div>
+      </div>
+      <button onClick={enable} style={{width:'100%', background:ORANGE, border:'none', borderRadius:10, padding:'13px', color:WHITE, fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:17, textTransform:'uppercase', letterSpacing:'0.05em', cursor:'pointer'}}>
+        Enable Reminders
+      </button>
+    </div>
+  )
+}
+
 function SettingsScreen({ client, fitToken, clientTargets, targetSource, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
@@ -660,50 +746,9 @@ function SettingsScreen({ client, fitToken, clientTargets, targetSource, onSignO
         <div style={{...T.super,marginBottom:10}}>Notifications</div>
         <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Daily Reminder — 8pm</div>
         <div style={{...T.small,marginBottom:18,lineHeight:1.6}}>
-          You receive a daily reminder at 8pm to log your habits. Use the buttons below to manage notification permissions directly.
+          You receive a push notification at 8pm every evening and a check-in reminder every Sunday at 6pm.
         </div>
-
-        {/* Enable / re-enable */}
-        {'Notification' in window && Notification.permission !== 'granted' && (
-          <button onClick={async () => {
-            const perm = await Notification.requestPermission()
-            if (perm === 'granted') {
-              navigator.serviceWorker.ready.then(r => r.active?.postMessage({ type: 'SCHEDULE_REMINDER' }))
-            }
-          }} style={{width:'100%',background:ORANGE,border:'none',borderRadius:10,padding:'13px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:17,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer',marginBottom:10}}>
-            Enable Reminders
-          </button>
-        )}
-
-        {'Notification' in window && Notification.permission === 'granted' && (
-          <div style={{background:GREEN_LIGHT,border:`1px solid ${GREEN}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
-            <span style={{fontSize:18}}>✓</span>
-            <div style={{fontWeight:600,fontSize:15,color:GREEN}}>Reminders are enabled</div>
-          </div>
-        )}
-
-        {/* Deep link to phone settings — works on iOS and Android */}
-        <div style={{...T.small,marginBottom:12,lineHeight:1.6}}>
-          To turn reminders off or manage delivery settings, open your phone's notification settings for this app:
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-          {/* iOS */}
-          <button onClick={() => window.open('app-settings:')} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'12px',color:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,textTransform:'uppercase',letterSpacing:'0.04em',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:5}}>
-            <span style={{fontSize:20}}>📱</span>
-            iPhone Settings
-          </button>
-          {/* Android */}
-          <button onClick={() => {
-            // Android intent deep link — opens notification settings for the PWA
-            try { window.open('intent://settings#Intent;scheme=android-app;end') } catch { window.open('https://support.google.com/android/answer/9079661') }
-          }} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'12px',color:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,textTransform:'uppercase',letterSpacing:'0.04em',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:5}}>
-            <span style={{fontSize:20}}>🤖</span>
-            Android Settings
-          </button>
-        </div>
-        <div style={{...T.tiny,marginTop:12,lineHeight:1.6,fontSize:12}}>
-          On iPhone: tap iPhone Settings → scroll to Safari → Notifications. On Android: tap Android Settings → Apps → your browser → Notifications.
-        </div>
+        <OneSignalToggle />
       </Card>
 
       {/* Delete account */}
@@ -755,7 +800,7 @@ export default function App() {
   const [monthlyDue,      setMonthlyDue]      = useState(false)
   const [weekData,        setWeekData]        = useState([])
   const [syncedCount,     setSyncedCount]     = useState(0)
-  const [fitToken,        setFitToken]        = useState(null)
+  const [fitConnected,    setFitConnected]    = useState(false)
   const [autoFilled,      setAutoFilled]      = useState({})
   const [showFitDismiss,  setShowFitDismiss]  = useState(false)
   const [clientTargets,   setClientTargets]   = useState(DEFAULT_TARGETS)
@@ -784,7 +829,6 @@ export default function App() {
       }
     }
     const {ls,ts}=getStreaks(); setLogStreak(ls); setTargetStreak(ts)
-    const token=getGoogleFitToken(); if(token)setFitToken(token)
 
     const onOn=async()=>{const sent=await flushQueue();if(sent>0){setSyncedCount(sent);setTimeout(()=>setSyncedCount(0),4000)}}
     const onOff=()=>{}
@@ -798,20 +842,37 @@ export default function App() {
     return()=>{window.removeEventListener('online',onOn);window.removeEventListener('offline',onOff);window.removeEventListener('beforeinstallprompt',handler)}
   },[])
 
-  // ── Auto-fill health ───────────────────────────────────
+  // ── Check Fit connection + auto-fill on open ───────────
   useEffect(()=>{
-    if(!fitToken)return
-    autoFillFromHealth(fitToken).then(data=>{
-      if(Object.keys(data).length>0){
-        setAutoFilled(data)
-        setHabitValues(prev=>{
-          const next={...prev}
-          Object.entries(data).forEach(([k,v])=>{if(prev[k]===undefined||prev[k]==='')next[k]=v})
-          return next
-        })
-      }
+    if (!client || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') return
+    const clientId = client.name.trim().toLowerCase().replace(/\s+/g,'-')
+
+    // Check connection status
+    checkFitConnection(APPS_SCRIPT_URL, clientId).then(connected => {
+      setFitConnected(connected)
+      if (!connected) return
+
+      // Fetch today's Fit data via proxy
+      fetchFitData(APPS_SCRIPT_URL, clientId).then(result => {
+        if (result.connected && result.data) {
+          const data = result.data
+          const filled = {}
+          if (data.steps !== null && data.steps !== undefined) filled.steps = data.steps
+          if (data.sleep !== null && data.sleep !== undefined) filled.sleep = data.sleep
+          if (Object.keys(filled).length > 0) {
+            setAutoFilled(filled)
+            setHabitValues(prev => {
+              const next = {...prev}
+              Object.entries(filled).forEach(([k,v]) => {
+                if (prev[k]===undefined||prev[k]==='') next[k]=v
+              })
+              return next
+            })
+          }
+        }
+      })
     })
-  },[fitToken])
+  },[client])
 
   // ── Client setup ───────────────────────────────────────
   useEffect(()=>{
@@ -863,8 +924,23 @@ export default function App() {
   // ── Install btn ────────────────────────────────────────
   useEffect(()=>{const btn=document.getElementById('pwa-install-btn');if(!btn||!deferredPrompt)return;const h=async()=>{deferredPrompt.prompt();const{outcome}=await deferredPrompt.userChoice;if(outcome==='accepted'){setShowInstall(false);setDeferredPrompt(null)}};btn.addEventListener('click',h);return()=>btn.removeEventListener('click',h)},[deferredPrompt,showInstall])
 
-  const handleSetupComplete=useCallback(info=>{LS.set('evolve_client',info);setClient(info);setTimeout(()=>{setShowQuote(true);setTimeout(()=>setShowNotifPrompt(true),600)},300)},[])
-
+  const handleSetupComplete=useCallback(info=>{
+    LS.set('evolve_client',info); setClient(info)
+    // Tag the user in OneSignal so we can target by name if needed
+    setTimeout(() => {
+      try {
+        if (window.OneSignal) {
+          window.OneSignal.User.addTags({
+            client_name:  info.name,
+            client_id:    info.name.trim().toLowerCase().replace(/\s+/g,'-'),
+            client_email: info.email,
+          })
+        }
+      } catch {}
+      setShowQuote(true)
+      setTimeout(()=>setShowNotifPrompt(true),600)
+    }, 300)
+  },[])
   const handleWordmarkTap=()=>{tapCount.current+=1;clearTimeout(tapTimer.current);if(tapCount.current>=5){tapCount.current=0;setCoachUnlocked(true);setShowCoachToast(true);setView('config')}else{tapTimer.current=setTimeout(()=>{tapCount.current=0},2000)}}
 
   // ── Fetch graphs ────────────────────────────────────────
@@ -1116,13 +1192,21 @@ export default function App() {
       {view==='settings'&&(
         <SettingsScreen
           client={client}
-          fitToken={fitToken}
+          fitToken={fitConnected}
           clientTargets={clientTargets}
           targetSource={targetSource}
           onSignOut={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false)}}
           onDeleteRequest={()=>{}}
-          onConnectFit={initiateGoogleFitAuth}
-          onDisconnectFit={()=>{revokeGoogleFit();setFitToken(null);setAutoFilled({})}}
+          onConnectFit={()=>{
+            const clientId=client.name.trim().toLowerCase().replace(/\s+/g,'-')
+            initiateGoogleFitAuth(APPS_SCRIPT_URL, clientId, client.name)
+          }}
+          onDisconnectFit={async()=>{
+            const clientId=client.name.trim().toLowerCase().replace(/\s+/g,'-')
+            await disconnectFit(APPS_SCRIPT_URL, clientId)
+            setFitConnected(false)
+            setAutoFilled({})
+          }}
         />
       )}
 
