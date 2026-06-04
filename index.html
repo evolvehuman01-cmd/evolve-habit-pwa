@@ -16,12 +16,26 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;900&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+    <!-- OneSignal Push Notifications -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "c76ea6ee-b57d-4663-8bc7-a3d28b113c10",
+          notifyButton: { enable: false },
+          allowLocalhostAsSecureOrigin: true,
+        });
+      });
+    </script>
+
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
       html { font-size: 16px; -webkit-text-size-adjust: 100%; }
       body {
-        background: #232F3E;
-        color: #ffffff;
+        background: #F0EEF5;
+        color: #1C2B3A;
         font-family: 'Barlow', sans-serif;
         -webkit-font-smoothing: antialiased;
         overscroll-behavior: none;
@@ -41,10 +55,7 @@
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js', { scope: '/' })
-            .then(reg => {
-              console.log('SW registered');
-              reg.active?.postMessage({ type: 'SCHEDULE_REMINDER' });
-            })
+            .then(reg => console.log('SW registered'))
             .catch(err => console.warn('SW failed:', err));
         });
       }
