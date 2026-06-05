@@ -9,8 +9,8 @@ import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 
 // ── CONFIG ────────────────────────────────────────────────
 const APP_VERSION       = 'v1.0.0'
-const APPS_SCRIPT_URL    = 'https://script.google.com/macros/s/AKfycbyE5QFzwd-FD2sIe00GY5G-qMv2Qg3bFFTga27sQ5xJlJ9G2x9HLeNpMmpbdjvcaKyi/exec'
-const CHECKIN_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyU2Ic2aczSqqDbb5oRb55s8iboXTIev_tVnUSXQxwySw78MZ5tsVibD-psRlvEii2QHg/exec'
+const APPS_SCRIPT_URL    = 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'
+const CHECKIN_SCRIPT_URL = 'YOUR_CHECKIN_APPS_SCRIPT_URL_HERE'
 
 // ── BRAND ─────────────────────────────────────────────────
 const ORANGE      = '#F26419'
@@ -638,9 +638,8 @@ function SetupScreen({ onComplete }) {
                 </div>
               </div>
               <div style={{...T.tiny,marginBottom:22,lineHeight:1.7,textAlign:'center'}}>Your information is kept private and used only by your Evolve:Wellbeing coach.</div>
-              <button onClick={handleComplete} style={{width:'100%',background:ORANGE,border:'none',borderRadius:12,padding:'17px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:20,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>Start Tracking →</button>
-              <button onClick={()=>setStep(1)} style={{width:'100%',marginTop:10,background:'transparent',border:'none',color:'#a0aec0',fontFamily:"'Barlow',sans-serif",fontSize:15,cursor:'pointer',padding:'6px'}}>← Go Back</button>
-          </Card>
+              <button onClick={handleComplete} style={{width:'100%',background:ORANGE,border:'none',borderRadius:12,padding:'17px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:20,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>Start Tracking</button>
+              <button onClick={()=>setStep(1)} style={{width:'100%',marginTop:10,background:'transparent',border:'none',color:'#a0aec0',fontFamily:"'Barlow',sans-serif",fontSize:15,cursor:'pointer',padding:'6px'}}>Go Back</button>
             </Card>
           )}
 
