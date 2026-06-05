@@ -9,8 +9,8 @@ import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 
 // ── CONFIG ────────────────────────────────────────────────
 const APP_VERSION       = 'v1.0.0'
-const APPS_SCRIPT_URL    = 'https://script.google.com/macros/s/AKfycbyE5QFzwd-FD2sIe00GY5G-qMv2Qg3bFFTga27sQ5xJlJ9G2x9HLeNpMmpbdjvcaKyi/exec'
-const CHECKIN_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyU2Ic2aczSqqDbb5oRb55s8iboXTIev_tVnUSXQxwySw78MZ5tsVibD-psRlvEii2QHg/exec'
+const APPS_SCRIPT_URL    = 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'
+const CHECKIN_SCRIPT_URL = 'YOUR_CHECKIN_APPS_SCRIPT_URL_HERE'
 
 // ── BRAND ─────────────────────────────────────────────────
 const ORANGE      = '#F26419'
@@ -1516,4 +1516,92 @@ export default function App() {
                 <ResponsiveContainer width="100%" height={170}><BarChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis domain={[0,100]} tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><ReferenceLine y={80} stroke={GREEN} strokeDasharray="4 4" strokeWidth={1}/><Bar dataKey="completion" name="Completion %" fill={ORANGE} radius={[5,5,0,0]}/></BarChart></ResponsiveContainer>
               </ChartCard>
               <ChartCard title="Digestion" subtitle="Daily score /10 · green = 7 target">
-                <ResponsiveContainer width="100%" height={170}><ComposedChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fi
+                <ResponsiveContainer width="100%" height={170}><ComposedChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis domain={[0,10]} tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><ReferenceLine y={7} stroke={GREEN} strokeDasharray="4 4" strokeWidth={1}/><Area type="monotone" dataKey="digestion" stroke="#7B1FA2" fill="rgba(123,31,162,0.1)" strokeWidth={2.5} dot={{fill:'#7B1FA2',r:3}} name="Digestion" connectNulls/></ComposedChart></ResponsiveContainer>
+              </ChartCard>
+              {visibleHabits.some(h=>h.id==='mobility')&&(
+                <ChartCard title="Mobility" subtitle={`Minutes per day · target: ${clientTargets.mobility}min`}>
+                  <ResponsiveContainer width="100%" height={170}><BarChart data={chartData.map(d=>({...d,mobility:d['mobility']||null}))} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><ReferenceLine y={clientTargets.mobility} stroke={GREEN} strokeDasharray="4 4" strokeWidth={1}/><Bar dataKey="mobility" name="Mobility (min)" fill="#00796B" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer>
+                </ChartCard>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── SETTINGS ── */}
+      {view==='settings'&&(
+        <SettingsScreen
+          client={client}
+          fitToken={fitConnected}
+          clientTargets={clientTargets}
+          targetSource={targetSource}
+          visibleHabits={visibleHabits}
+          exportDone={exportDone}
+          setExportDone={setExportDone}
+          onSignOut={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false)}}
+          onDeleteRequest={()=>{}}
+          onConnectFit={()=>{
+            const clientId=client.name.trim().toLowerCase().replace(/\s+/g,'-')
+            initiateGoogleFitAuth(APPS_SCRIPT_URL, clientId, client.name)
+          }}
+          onDisconnectFit={async()=>{
+            const clientId=client.name.trim().toLowerCase().replace(/\s+/g,'-')
+            await disconnectFit(APPS_SCRIPT_URL, clientId)
+            setFitConnected(false)
+            setAutoFilled({})
+          }}
+        />
+      )}
+
+      {/* ── COACH CONFIG ── */}
+      {view==='config'&&coachUnlocked&&(
+        <div style={{flex:1,maxWidth:600,width:'100%',margin:'0 auto',padding:'20px 14px 110px'}}>
+          <div style={{...T.super,marginBottom:4}}>Coach Mode</div>
+          <div style={{...T.h2,fontSize:30,marginBottom:22}}>Client Setup</div>
+          <Card style={{padding:22,marginBottom:14}}>
+            <div style={{...T.super,marginBottom:10}}>Current Client</div>
+            <div style={{fontSize:19,fontWeight:700,color:NAVY,marginBottom:4}}>{client.name}</div>
+            <div style={{fontSize:16,color:'#718096',marginBottom:3}}>{client.email}</div>
+            <div style={{...T.tiny,marginBottom:16,fontSize:13}}>Joined: {client.joinedAt?new Date(client.joinedAt).toLocaleDateString('en-GB'):'Unknown'} · Monthly check-in day: {client.startDay||1}</div>
+            <button onClick={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false);setView('log')}} style={{background:CREAM,border:'1px solid rgba(28,43,58,0.18)',borderRadius:8,padding:'10px 20px',color:'#718096',fontFamily:"'Barlow',sans-serif",fontSize:15,cursor:'pointer'}}>Clear Client (Sign Out)</button>
+          </Card>
+          <div style={{background:WHITE,border:`1.5px solid ${ORANGE}`,borderRadius:14,padding:26,marginBottom:14,boxShadow:'0 1px 4px rgba(28,43,58,0.07)'}}>
+            <div style={{...T.super,marginBottom:4}}>Active Habits</div>
+            <div style={{...T.h3,fontSize:22,marginBottom:6}}>Select Up to 5</div>
+            <div style={{...T.small,marginBottom:20}}>Choose which habits appear in the client's daily log.</div>
+            {ALL_HABITS.map(h=>{const on=activeHabits.includes(h.id);return(
+              <button key={h.id} onClick={()=>{if(on)setActiveHabits(p=>p.filter(x=>x!==h.id));else if(activeHabits.length<5)setActiveHabits(p=>[...p,h.id])}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:on?`${ORANGE}10`:CREAM,border:`1.5px solid ${on?ORANGE:'rgba(28,43,58,0.12)'}`,borderRadius:10,padding:'14px 16px',marginBottom:8,color:on?NAVY:'#718096',fontFamily:"'Barlow',sans-serif",fontSize:16,cursor:on||activeHabits.length<5?'pointer':'not-allowed',textAlign:'left'}}>
+                <span style={{fontSize:22}}>{h.icon}</span>
+                <div style={{flex:1}}><div style={{fontWeight:600,fontSize:16,color:on?NAVY:'#718096'}}>{h.label}</div><div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>{h.desc}</div></div>
+                {on&&<span style={{background:ORANGE,color:WHITE,borderRadius:10,padding:'3px 10px',fontSize:13,fontWeight:700}}>Active</span>}
+              </button>
+            )})}
+            <div style={{...T.tiny,marginTop:6,fontSize:13}}>{activeHabits.length}/5 selected</div>
+            <div style={{marginTop:22,paddingTop:18,borderTop:'1px solid rgba(28,43,58,0.1)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div><div style={{fontWeight:600,fontSize:17,color:NAVY}}>Cycle Tracking</div><div style={{...T.tiny,marginTop:3,fontSize:13}}>Enable for peri/menopausal clients</div></div>
+              <button onClick={()=>setShowCycle(v=>!v)} style={{background:showCycle?ORANGE:CREAM,border:`1.5px solid ${showCycle?ORANGE:'rgba(28,43,58,0.18)'}`,borderRadius:20,padding:'10px 22px',color:showCycle?WHITE:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>{showCycle?'On':'Off'}</button>
+            </div>
+          </div>
+          <Card style={{padding:20}}>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:6,color:APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'?RED:GREEN}}>{APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'?'⚠ Not connected to Google Sheets':'✓ Connected to Google Sheets'}</div>
+            <div style={{...T.small}}>{APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'?'Paste your Apps Script URL into APPS_SCRIPT_URL in App.jsx and redeploy.':"Logs saving to coach's Google Sheet automatically."}</div>
+          </Card>
+          <button onClick={()=>{setCoachUnlocked(false);setView('log')}} style={{width:'100%',marginTop:8,background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:12,padding:'15px',color:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,textTransform:'uppercase',letterSpacing:'0.06em',cursor:'pointer'}}>← Exit Coach Mode</button>
+        </div>
+      )}
+
+      {/* Bottom nav */}
+      <div style={{position:'fixed',bottom:0,left:0,right:0,background:WHITE,borderTop:'1px solid rgba(28,43,58,0.12)',boxShadow:'0 -2px 10px rgba(28,43,58,0.08)',zIndex:50}}>
+        <div style={{display:'flex',maxWidth:600,margin:'0 auto'}}>
+          {navTabs.map(({v,icon,label})=>(
+            <button key={v} onClick={()=>setView(v)} style={{flex:1,background:'transparent',border:'none',padding:'13px 8px 11px',color:view===v?ORANGE:'#a0aec0',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:4,transition:'color .15s',position:'relative'}}>
+              {v==='log'&&(weeklyDue||monthlyDue)&&<div style={{position:'absolute',top:8,right:'22%',width:10,height:10,borderRadius:'50%',background:ORANGE,border:`2px solid ${WHITE}`}}/>}
+              <span style={{fontSize:22}}>{icon}</span>
+              <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,letterSpacing:'0.06em',textTransform:'uppercase'}}>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
