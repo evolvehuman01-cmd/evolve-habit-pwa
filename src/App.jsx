@@ -8,8 +8,8 @@ import { initiateGoogleFitAuth, checkFitConnection, fetchFitData, disconnectFit 
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 
 // ── CONFIG ────────────────────────────────────────────────
-const APPS_SCRIPT_URL    = 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'
-const CHECKIN_SCRIPT_URL = 'YOUR_CHECKIN_APPS_SCRIPT_URL_HERE'
+const APPS_SCRIPT_URL    = 'https://script.google.com/macros/s/AKfycbyE5QFzwd-FD2sIe00GY5G-qMv2Qg3bFFTga27sQ5xJlJ9G2x9HLeNpMmpbdjvcaKyi/exec'
+const CHECKIN_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyU2Ic2aczSqqDbb5oRb55s8iboXTIev_tVnUSXQxwySw78MZ5tsVibD-psRlvEii2QHg/exec'
 
 // ── BRAND ─────────────────────────────────────────────────
 const ORANGE      = '#F26419'
@@ -161,14 +161,19 @@ function updateStreaks(habitValues, visibleHabits) {
   const hasLogged  = Object.values(habitValues).some(v=>v!==''&&v!==undefined&&v!==null)
   const greenCount = visibleHabits.filter(h=>Number(habitValues[h.id]||0)>=h.green).length
   const onTarget   = greenCount>=Math.ceil(visibleHabits.length*0.6)
+
   let ls=LS.get('streak_log',{count:0,lastDate:null,best:0})
   if (hasLogged&&ls.lastDate!==today) {
-    const c=ls.lastDate===yest||(hourOfDay()<6); ls.count=c?ls.count+1:1; ls.lastDate=today; ls.best=Math.max(ls.best,ls.count)
+    // Grace period: only applies when lastDate IS yesterday and it's before 6am
+    // Prevents a 3-day gap being counted as consecutive just because it's 5am
+    const isConsec = ls.lastDate===yest || (ls.lastDate===yest && hourOfDay()<6)
+    ls.count=isConsec?ls.count+1:1; ls.lastDate=today; ls.best=Math.max(ls.best,ls.count)
     LS.set('streak_log',ls)
   }
   let ts=LS.get('streak_target',{count:0,lastDate:null,best:0})
   if (onTarget&&ts.lastDate!==today) {
-    const c=ts.lastDate===yest||(hourOfDay()<6); ts.count=c?ts.count+1:1; ts.lastDate=today; ts.best=Math.max(ts.best,ts.count)
+    const isConsec = ts.lastDate===yest || (ts.lastDate===yest && hourOfDay()<6)
+    ts.count=isConsec?ts.count+1:1; ts.lastDate=today; ts.best=Math.max(ts.best,ts.count)
     LS.set('streak_target',ts)
   }
   return {ls,ts}
@@ -377,7 +382,7 @@ function HabitCalendar({ visibleHabits }) {
 }
 
 // ── WEEKLY REPORT CARD (Progress tab) ─────────────────────
-function WeeklyReportCard({ data }) {
+function WeeklyReportCard({ data, clientTargets }) {
   if (!data||data.length<3) return (
     <Card style={{textAlign:'center',padding:32}}>
       <div style={{fontSize:32,marginBottom:12}}>📊</div>
@@ -385,14 +390,16 @@ function WeeklyReportCard({ data }) {
       <div style={{...T.small}}>Log at least 3 days this week to see your summary.</div>
     </Card>
   )
+  // Use coach-set targets if available, fall back to evidence-based defaults
+  const t = { ...DEFAULT_TARGETS, ...(clientTargets || {}) }
   const calcAvg=key=>{const v=data.map(d=>d[key]).filter(v=>v!==null&&!isNaN(v));return v.length?(v.reduce((a,b)=>a+b,0)/v.length):null}
   const metrics=[
-    {key:'sleep',label:'Sleep',target:7.5,unit:'h',good:'>=',icon:'🌙'},
-    {key:'steps',label:'Steps',target:8000,unit:'',good:'>=',icon:'👟'},
-    {key:'hydration',label:'Hydration',target:2.5,unit:'L',good:'>=',icon:'💧'},
-    {key:'stress',label:'Stress',target:5,unit:'/10',good:'<=',icon:'⚡'},
-    {key:'mood',label:'Mood',target:6,unit:'/10',good:'>=',icon:'😊'},
-    {key:'energy',label:'Energy',target:6,unit:'/10',good:'>=',icon:'🔋'},
+    {key:'sleep',    label:'Sleep',    target:t.sleep,    unit:'h',    good:'>=', icon:'🌙'},
+    {key:'steps',    label:'Steps',    target:t.steps,    unit:'',     good:'>=', icon:'👟'},
+    {key:'hydration',label:'Hydration',target:t.hydration,unit:'L',    good:'>=', icon:'💧'},
+    {key:'stress',   label:'Stress',   target:t.stress,   unit:'/10',  good:'<=', icon:'⚡'},
+    {key:'mood',     label:'Mood',     target:t.mood,     unit:'/10',  good:'>=', icon:'😊'},
+    {key:'energy',   label:'Energy',   target:t.energy,   unit:'/10',  good:'>=', icon:'🔋'},
   ]
   const getStatus=(avg,target,good)=>{if(avg===null)return'none';if(good==='>=')return avg>=target?'green':avg>=target*0.8?'amber':'red';return avg<=target?'green':avg<=target*1.2?'amber':'red'}
   const sc={green:GREEN,amber:AMBER,red:RED,none:'#cbd5e0'}
@@ -944,7 +951,18 @@ export default function App() {
   const handleWordmarkTap=()=>{tapCount.current+=1;clearTimeout(tapTimer.current);if(tapCount.current>=5){tapCount.current=0;setCoachUnlocked(true);setShowCoachToast(true);setView('config')}else{tapTimer.current=setTimeout(()=>{tapCount.current=0},2000)}}
 
   // ── Fetch graphs ────────────────────────────────────────
-  const fetchData=useCallback(async()=>{if(!client||APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE')return;setLoadingGraphs(true);try{const res=await fetch(`${APPS_SCRIPT_URL}?clientId=${encodeURIComponent(client.name)}&days=${graphDays}`);const json=await res.json();if(json.success&&json.data)setHistoricData(json.data)}catch{}setLoadingGraphs(false)},[client,graphDays])
+  const fetchData=useCallback(async()=>{
+    if(!client||APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE')return
+    setLoadingGraphs(true)
+    // Fix 4: query by clientId slug (lowercase-hyphenated), not display name
+    const clientId = client.name.trim().toLowerCase().replace(/\s+/g,'-')
+    try{
+      const res=await fetch(`${APPS_SCRIPT_URL}?clientId=${encodeURIComponent(clientId)}&days=${graphDays}`)
+      const json=await res.json()
+      if(json.success&&json.data)setHistoricData(json.data)
+    }catch{}
+    setLoadingGraphs(false)
+  },[client,graphDays])
   useEffect(()=>{if(view==='progress')fetchData()},[view,fetchData])
 
   // ── Send log ───────────────────────────────────────────
@@ -953,16 +971,51 @@ export default function App() {
     setSendStatus('sending')
     const {ls,ts}=updateStreaks(habitValues,visibleHabits)
     setLogStreak(ls); setTargetStreak(ts)
-    const payload={date:todayKey,clientId:client?.name?.toLowerCase().replace(/\s+/g,'-')||'unknown',clientName:client?.name||'',clientEmail:client?.email||'',habits:habitValues,metrics:metricValues,cyclePhase:showCycle?cyclePhase:'',reflectionPrompt:DAILY_PROMPTS[promptIdx%DAILY_PROMPTS.length],reflection,habitsCompleted:completedHabits.length,habitsTotal:visibleHabits.length,logStreak:ls.count,targetStreak:ts.count}
-    if(APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'){setTimeout(()=>{setSendStatus('success');if(allGreen){setShowConfetti(true);setTimeout(()=>setShowConfetti(false),3500)}},1200);return}
+    const clientId=client?.name?.trim().toLowerCase().replace(/\s+/g,'-')||'unknown'
+    const payload={date:todayKey,clientId,clientName:client?.name||'',clientEmail:client?.email||'',habits:habitValues,metrics:metricValues,cyclePhase:showCycle?cyclePhase:'',reflectionPrompt:DAILY_PROMPTS[promptIdx%DAILY_PROMPTS.length],reflection,habitsCompleted:completedHabits.length,habitsTotal:visibleHabits.length,logStreak:ls.count,targetStreak:ts.count}
+    if(APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'){
+      setTimeout(()=>{
+        setSendStatus('success')
+        if(allGreen){setShowConfetti(true);setTimeout(()=>setShowConfetti(false),3500)}
+        // Fix 2: reset to idle after 4s so client can re-send if needed
+        setTimeout(()=>setSendStatus('idle'),4000)
+      },1200)
+      return
+    }
     if(!navigator.onLine){queueLog(payload,APPS_SCRIPT_URL);setSendStatus('queued');return}
-    try{await fetch(APPS_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});setTimeout(()=>{setSendStatus('success');if(allGreen){setShowConfetti(true);setTimeout(()=>setShowConfetti(false),3500)}},1200)}catch{queueLog(payload,APPS_SCRIPT_URL);setSendStatus('queued')}
+    try{
+      await fetch(APPS_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      setTimeout(()=>{
+        setSendStatus('success')
+        if(allGreen){setShowConfetti(true);setTimeout(()=>setShowConfetti(false),3500)}
+        // Fix 2: reset to idle after 4s
+        setTimeout(()=>setSendStatus('idle'),4000)
+      },1200)
+    }catch{
+      queueLog(payload,APPS_SCRIPT_URL)
+      setSendStatus('queued')
+    }
   }
 
-  const handleCheckIn=async(data)=>{if(CHECKIN_SCRIPT_URL==='YOUR_CHECKIN_APPS_SCRIPT_URL_HERE')return;try{await fetch(CHECKIN_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})}catch{}}
+  // Fix 6: check-in with offline queuing and error feedback
+  const handleCheckIn=async(data)=>{
+    if(CHECKIN_SCRIPT_URL==='YOUR_CHECKIN_APPS_SCRIPT_URL_HERE')return
+    if(!navigator.onLine){
+      // Queue check-in for retry when back online
+      queueLog(data, CHECKIN_SCRIPT_URL)
+      return
+    }
+    try{
+      await fetch(CHECKIN_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    }catch{
+      // If fetch fails, queue it
+      queueLog(data, CHECKIN_SCRIPT_URL)
+    }
+  }
 
   // ── Chart data ─────────────────────────────────────────
-  const chartData=historicData.sort((a,b)=>new Date(a['Date'])-new Date(b['Date'])).map(row=>({date:new Date(row['Date']).toLocaleDateString('en-GB',{day:'numeric',month:'short'}),sleep:parseFloat(row['Sleep (hrs)'])||null,steps:parseInt(row['Steps'])||null,hydration:parseFloat(row['Hydration (L)'])||null,stress:parseFloat(row['Stress RPE (1-10)'])||null,mood:parseFloat(row['Mood (1-10)'])||null,energy:parseFloat(row['Energy (1-10)'])||null,completion:parseFloat(row['Completion %'])||null}))
+  // Fix 3: .slice() before .sort() to avoid mutating state directly
+  const chartData=[...historicData].sort((a,b)=>new Date(a['Date'])-new Date(b['Date'])).map(row=>({date:new Date(row['Date']).toLocaleDateString('en-GB',{day:'numeric',month:'short'}),sleep:parseFloat(row['Sleep (hrs)'])||null,steps:parseInt(row['Steps'])||null,hydration:parseFloat(row['Hydration (L)'])||null,stress:parseFloat(row['Stress RPE (1-10)'])||null,mood:parseFloat(row['Mood (1-10)'])||null,energy:parseFloat(row['Energy (1-10)'])||null,completion:parseFloat(row['Completion %'])||null}))
   const calcAvg=key=>{const v=chartData.map(d=>d[key]).filter(v=>v!==null&&!isNaN(v));return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):null}
 
   const inp={width:'100%',background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'14px 16px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:17,outline:'none',boxSizing:'border-box'}
@@ -1127,7 +1180,7 @@ export default function App() {
         <div style={{flex:1,maxWidth:600,width:'100%',margin:'0 auto',padding:'20px 14px 110px'}}>
 
           {/* Weekly summary at top of Progress */}
-          <WeeklyReportCard data={weekData}/>
+          <WeeklyReportCard data={weekData} clientTargets={clientTargets}/>
 
           {/* Calendar */}
           <HabitCalendar visibleHabits={visibleHabits}/>
@@ -1153,12 +1206,12 @@ export default function App() {
             <>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginBottom:18}}>
                 {[
-                  {label:'Avg Sleep',val:calcAvg('sleep')?`${calcAvg('sleep')}h`:'—',ok:calcAvg('sleep')>=7,target:'7.5h'},
-                  {label:'Avg Stress',val:calcAvg('stress')??'—',ok:calcAvg('stress')<=5,target:'≤5'},
-                  {label:'Avg Mood',val:calcAvg('mood')??'—',ok:calcAvg('mood')>=6,target:'≥6'},
-                  {label:'Avg Energy',val:calcAvg('energy')??'—',ok:calcAvg('energy')>=6,target:'≥6'},
-                  {label:'Completion',val:calcAvg('completion')?`${calcAvg('completion')}%`:'—',ok:calcAvg('completion')>=80,target:'100%'},
-                  {label:'Total Logs',val:chartData.length,ok:true,target:`${graphDays}d`},
+                  {label:'Avg Sleep',  val:calcAvg('sleep')?`${calcAvg('sleep')}h`:'—',  ok:Number(calcAvg('sleep'))>=clientTargets.sleep,                target:`${clientTargets.sleep}h`},
+                  {label:'Avg Stress', val:calcAvg('stress')??'—',                        ok:Number(calcAvg('stress'))<=clientTargets.stress,              target:`≤${clientTargets.stress}`},
+                  {label:'Avg Mood',   val:calcAvg('mood')??'—',                          ok:Number(calcAvg('mood'))>=clientTargets.mood,                  target:`≥${clientTargets.mood}`},
+                  {label:'Avg Energy', val:calcAvg('energy')??'—',                        ok:Number(calcAvg('energy'))>=clientTargets.energy,              target:`≥${clientTargets.energy}`},
+                  {label:'Completion', val:calcAvg('completion')?`${calcAvg('completion')}%`:'—', ok:Number(calcAvg('completion'))>=80,                    target:'≥80%'},
+                  {label:'Total Logs', val:chartData.length,                              ok:true,                                                         target:`${graphDays}d`},
                 ].map(c=>(
                   <div key={c.label} style={{background:WHITE,border:'1px solid rgba(28,43,58,0.1)',borderRadius:11,padding:'14px 10px',textAlign:'center',boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}}>
                     <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:26,color:c.ok?GREEN:AMBER}}>{c.val}</div>
@@ -1168,14 +1221,14 @@ export default function App() {
                 ))}
               </div>
 
-              <ChartCard title="Sleep Duration" subtitle="Hours per night · green = 7h target">
-                <ResponsiveContainer width="100%" height={190}><ComposedChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis domain={[0,12]} tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><ReferenceLine y={7} stroke={GREEN} strokeDasharray="4 4" strokeWidth={1}/><Area type="monotone" dataKey="sleep" stroke={ORANGE} fill={`${ORANGE}22`} strokeWidth={2.5} dot={{fill:ORANGE,r:3}} name="Sleep (hrs)" connectNulls/></ComposedChart></ResponsiveContainer>
+              <ChartCard title="Sleep Duration" subtitle={`Hours per night · target: ${clientTargets.sleep}h`}>
+                <ResponsiveContainer width="100%" height={190}><ComposedChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis domain={[0,12]} tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><ReferenceLine y={clientTargets.sleep} stroke={GREEN} strokeDasharray="4 4" strokeWidth={1}/><Area type="monotone" dataKey="sleep" stroke={ORANGE} fill={`${ORANGE}22`} strokeWidth={2.5} dot={{fill:ORANGE,r:3}} name="Sleep (hrs)" connectNulls/></ComposedChart></ResponsiveContainer>
               </ChartCard>
-              <ChartCard title="Daily Steps" subtitle="Steps per day · green = 8,000 target">
-                <ResponsiveContainer width="100%" height={190}><BarChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><ReferenceLine y={8000} stroke={GREEN} strokeDasharray="4 4" strokeWidth={1}/><Bar dataKey="steps" fill={ORANGE} radius={[5,5,0,0]} name="Steps"/></BarChart></ResponsiveContainer>
+              <ChartCard title="Daily Steps" subtitle={`Steps per day · target: ${Number(clientTargets.steps).toLocaleString()}`}>
+                <ResponsiveContainer width="100%" height={190}><BarChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><ReferenceLine y={clientTargets.steps} stroke={GREEN} strokeDasharray="4 4" strokeWidth={1}/><Bar dataKey="steps" fill={ORANGE} radius={[5,5,0,0]} name="Steps"/></BarChart></ResponsiveContainer>
               </ChartCard>
-              <ChartCard title="Hydration" subtitle="Litres per day · green = 2.5L target">
-                <ResponsiveContainer width="100%" height={170}><ComposedChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis domain={[0,5]} tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><ReferenceLine y={2.5} stroke={GREEN} strokeDasharray="4 4" strokeWidth={1}/><Area type="monotone" dataKey="hydration" stroke="#1565C0" fill="rgba(21,101,192,0.12)" strokeWidth={2.5} dot={{fill:'#1565C0',r:3}} name="Hydration (L)" connectNulls/></ComposedChart></ResponsiveContainer>
+              <ChartCard title="Hydration" subtitle={`Litres per day · target: ${clientTargets.hydration}L`}>
+                <ResponsiveContainer width="100%" height={170}><ComposedChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis domain={[0,5]} tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><ReferenceLine y={clientTargets.hydration} stroke={GREEN} strokeDasharray="4 4" strokeWidth={1}/><Area type="monotone" dataKey="hydration" stroke="#1565C0" fill="rgba(21,101,192,0.12)" strokeWidth={2.5} dot={{fill:'#1565C0',r:3}} name="Hydration (L)" connectNulls/></ComposedChart></ResponsiveContainer>
               </ChartCard>
               <ChartCard title="Stress · Mood · Energy" subtitle="Daily scores /10">
                 <ResponsiveContainer width="100%" height={210}><LineChart data={chartData} margin={{top:8,right:8,left:-22,bottom:0}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(28,43,58,0.08)"/><XAxis dataKey="date" tick={{fill:'#718096',fontSize:12}}/><YAxis domain={[0,10]} tick={{fill:'#718096',fontSize:12}}/><Tooltip content={<CustomTooltip/>}/><Legend wrapperStyle={{fontSize:14,color:'#718096'}}/><ReferenceLine y={5} stroke="rgba(28,43,58,0.1)" strokeDasharray="3 3"/><Line type="monotone" dataKey="stress" stroke={RED} strokeWidth={2.5} dot={{r:2}} name="Stress" connectNulls/><Line type="monotone" dataKey="mood" stroke={GREEN} strokeWidth={2.5} dot={{r:2}} name="Mood" connectNulls/><Line type="monotone" dataKey="energy" stroke={ORANGE} strokeWidth={2.5} dot={{r:2}} name="Energy" connectNulls/></LineChart></ResponsiveContainer>
