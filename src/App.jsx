@@ -386,12 +386,34 @@ function HabitCalendar({ visibleHabits, onDayTap }) {
   )
 }
 
-// ── WEEKLY REPORT CARD (Progress tab) ─────────────────────
+// ── WEEK DATE RANGE HELPER ────────────────────────────────
+function getWeekSummaryMeta() {
+  const today = new Date()
+  const dow = today.getDay() // 0=Sun
+  const monOffset = dow === 0 ? -6 : 1 - dow
+  const mon = new Date(today); mon.setDate(today.getDate() + monOffset)
+  const sun = new Date(mon);   sun.setDate(mon.getDate() + 6)
+  const fmt = d => d.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' })
+  const keys = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(mon); d.setDate(mon.getDate() + i)
+    keys.push(d.toISOString().split('T')[0])
+  }
+  const todayStr = new Date().toISOString().split('T')[0]
+  const reached  = keys.filter(k => k <= todayStr).length
+  const logged   = keys.filter(k => LS.get(`log_${k}`)).length
+  return { from: fmt(mon), to: fmt(sun), daysLogged: logged, daysReached: reached }
+}
+
+// ── WEEKLY REPORT CARD ────────────────────────────────────
 function WeeklyReportCard({ data, clientTargets }) {
+  const meta = getWeekSummaryMeta()
+
   if (!data||data.length<3) return (
     <Card style={{textAlign:'center',padding:32}}>
       <div style={{fontSize:32,marginBottom:12}}>📊</div>
-      <div style={{...T.h3,fontSize:20,marginBottom:8}}>Weekly Summary</div>
+      <div style={{...T.h3,fontSize:20,marginBottom:4}}>Weekly Summary</div>
+      <div style={{fontSize:13,color:'#a0aec0',marginBottom:10}}>{meta.from} → {meta.to}</div>
       <div style={{...T.small}}>Log at least 3 days this week to see your summary.</div>
     </Card>
   )
@@ -415,6 +437,17 @@ function WeeklyReportCard({ data, clientTargets }) {
       <div style={{background:NAVY,padding:'14px 18px'}}>
         <div style={{...T.super,color:ORANGE,marginBottom:2}}>This Week</div>
         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:24,color:WHITE,textTransform:'uppercase'}}>Weekly Summary</div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:6}}>
+          <div style={{fontSize:13,color:'rgba(255,255,255,0.55)'}}>{meta.from} → {meta.to}</div>
+          <div style={{
+            background: meta.daysLogged >= meta.daysReached ? 'rgba(46,125,50,0.35)' : 'rgba(242,100,25,0.35)',
+            borderRadius:20, padding:'3px 10px', fontSize:13, fontWeight:700,
+            color: meta.daysLogged >= meta.daysReached ? '#81c784' : ORANGE,
+            fontFamily:"'Barlow Condensed',sans-serif", letterSpacing:'0.04em',
+          }}>
+            {meta.daysLogged}/{meta.daysReached} days logged
+          </div>
+        </div>
       </div>
       {compAvg!==null&&(
         <div style={{padding:'14px 18px',borderBottom:'1px solid rgba(28,43,58,0.08)',display:'flex',alignItems:'center',gap:14}}>
@@ -830,76 +863,80 @@ function CoachToast({ onDone }) {
   return <div style={{position:'fixed',top:84,left:'50%',transform:'translateX(-50%)',zIndex:9997,background:NAVY,border:`2px solid ${ORANGE}`,borderRadius:12,padding:'13px 26px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,letterSpacing:'0.06em',textTransform:'uppercase',whiteSpace:'nowrap',boxShadow:'0 4px 20px rgba(28,43,58,0.3)'}}>⚙ Coach Mode Unlocked</div>
 }
 
-// ── CLIENT SETTINGS SCREEN ────────────────────────────────
-// ── ONESIGNAL TOGGLE ─────────────────────────────────────
+// ── FIX 2: ONESIGNAL TOGGLE — always resolves to actionable button ──
 function OneSignalToggle() {
-  const [subscribed, setSubscribed] = useState(false)
-  const [loading,    setLoading]    = useState(true)
+  const [subscribed, setSubscribed] = useState(null) // null = loading
+  const [working,    setWorking]    = useState(false)
 
   useEffect(() => {
+    let cancelled = false
     const check = async () => {
       try {
-        if (window.OneSignal) {
+        if (window.OneSignal && window.OneSignal.User?.PushSubscription) {
           const isSubscribed = await window.OneSignal.User.PushSubscription.optedIn
-          setSubscribed(!!isSubscribed)
+          if (!cancelled) setSubscribed(!!isSubscribed)
+          return
         }
       } catch {}
-      setLoading(false)
+      if (!cancelled) setSubscribed(false)
     }
-    // OneSignal may not be ready immediately
-    const timer = setTimeout(check, 1500)
-    return () => clearTimeout(timer)
+    const timer    = setTimeout(check, 500)
+    const fallback = setTimeout(() => { if (!cancelled) setSubscribed(false) }, 2000)
+    return () => { cancelled = true; clearTimeout(timer); clearTimeout(fallback) }
   }, [])
 
   const enable = async () => {
-    setLoading(true)
+    setWorking(true)
     try {
-      await window.OneSignal.Notifications.requestPermission()
-      await window.OneSignal.User.PushSubscription.optIn()
-      setSubscribed(true)
+      if (window.OneSignal) {
+        await window.OneSignal.Notifications.requestPermission()
+        await window.OneSignal.User.PushSubscription.optIn()
+        setSubscribed(true)
+      } else {
+        alert('Notifications are not yet configured. Contact your coach.')
+      }
     } catch(err) { console.warn('OneSignal opt-in failed:', err) }
-    setLoading(false)
+    setWorking(false)
   }
 
   const disable = async () => {
-    setLoading(true)
+    setWorking(true)
     try {
-      await window.OneSignal.User.PushSubscription.optOut()
-      setSubscribed(false)
+      if (window.OneSignal) { await window.OneSignal.User.PushSubscription.optOut(); setSubscribed(false) }
     } catch(err) { console.warn('OneSignal opt-out failed:', err) }
-    setLoading(false)
+    setWorking(false)
   }
 
-  if (loading) return (
-    <div style={{...T.small, color:'#a0aec0'}}>Checking notification status...</div>
+  if (subscribed === null) return (
+    <div style={{height:44,background:'rgba(28,43,58,0.06)',borderRadius:10,display:'flex',alignItems:'center',paddingLeft:14}}>
+      <div style={{...T.tiny,fontSize:14}}>Checking...</div>
+    </div>
   )
-
   if (subscribed) return (
     <div>
-      <div style={{background:GREEN_LIGHT, border:`1px solid ${GREEN}`, borderRadius:10, padding:'12px 14px', marginBottom:14, display:'flex', alignItems:'center', gap:10}}>
+      <div style={{background:GREEN_LIGHT,border:`1px solid ${GREEN}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
         <span style={{fontSize:18}}>✓</span>
         <div style={{fontWeight:600,fontSize:16,color:GREEN}}>Reminders are enabled</div>
       </div>
-      <button onClick={disable} style={{background:CREAM, border:'1.5px solid rgba(28,43,58,0.18)', borderRadius:10, padding:'11px 20px', color:'#718096', fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, fontSize:15, textTransform:'uppercase', letterSpacing:'0.05em', cursor:'pointer'}}>
-        Turn Off Reminders
+      <button onClick={disable} disabled={working} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'12px 20px',color:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
+        {working ? 'Updating...' : 'Turn Off Reminders'}
       </button>
     </div>
   )
-
   return (
     <div>
-      <div style={{background:AMBER_LIGHT, border:`1px solid ${AMBER}`, borderRadius:10, padding:'12px 14px', marginBottom:14, display:'flex', alignItems:'center', gap:10}}>
+      <div style={{background:AMBER_LIGHT,border:`1px solid ${AMBER}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
         <span style={{fontSize:18}}>🔕</span>
         <div style={{fontWeight:600,fontSize:16,color:AMBER}}>Reminders are off</div>
       </div>
-      <button onClick={enable} style={{width:'100%', background:ORANGE, border:'none', borderRadius:10, padding:'13px', color:WHITE, fontFamily:"'Barlow Condensed',sans-serif", fontWeight:900, fontSize:17, textTransform:'uppercase', letterSpacing:'0.05em', cursor:'pointer'}}>
-        Enable Reminders
+      <button onClick={enable} disabled={working} style={{width:'100%',background:working?'rgba(28,43,58,0.15)':ORANGE,border:'none',borderRadius:10,padding:'13px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:17,textTransform:'uppercase',letterSpacing:'0.05em',cursor:working?'not-allowed':'pointer'}}>
+        {working ? 'Enabling...' : 'Enable Reminders'}
       </button>
     </div>
   )
 }
 
-function SettingsScreen({ client, fitToken, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit }) {
+function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const handleDelete = () => {
@@ -932,16 +969,33 @@ function SettingsScreen({ client, fitToken, clientTargets, targetSource, visible
       {/* Google Fit */}
       <Card style={{padding:22,marginBottom:14}}>
         <div style={{...T.super,marginBottom:10}}>Health Integration</div>
-        {fitToken ? (
+        {fitStatus === 'checking' ? (
+          <div style={{height:44,background:'rgba(28,43,58,0.06)',borderRadius:10,display:'flex',alignItems:'center',paddingLeft:14}}>
+            <div style={{...T.tiny,fontSize:14}}>Checking Google Fit status...</div>
+          </div>
+        ) : fitToken ? (
           <>
-            <div style={{fontWeight:700,fontSize:17,color:GREEN,marginBottom:6}}>✓ Google Fit Connected</div>
+            <div style={{background:GREEN_LIGHT,border:`1px solid ${GREEN}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontSize:18}}>✓</span>
+              <div style={{fontWeight:600,fontSize:16,color:GREEN}}>Google Fit Connected</div>
+            </div>
             <div style={{...T.small,marginBottom:14}}>Steps and sleep auto-fill from your health data daily.</div>
             <button onClick={onDisconnectFit} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.2)',borderRadius:10,padding:'11px 22px',color:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>Disconnect</button>
           </>
+        ) : fitStatus === 'connecting' ? (
+          <div style={{background:`${ORANGE}12`,border:`1px solid ${ORANGE}`,borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:18}}>⏳</span>
+            <div style={{fontWeight:600,fontSize:15,color:ORANGE}}>Opening Google authorisation — complete it in the new tab then return here.</div>
+          </div>
         ) : (
           <>
-            <div style={{fontWeight:700,fontSize:17,color:'#718096',marginBottom:6}}>Google Fit not connected</div>
-            <div style={{...T.small,marginBottom:14}}>Connect to auto-fill steps and sleep each day.</div>
+            {fitStatus === 'error' && (
+              <div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'10px 14px',marginBottom:12,fontSize:14,color:RED}}>
+                Could not connect to Google Fit. Check that your coach has configured the integration, then try again.
+              </div>
+            )}
+            <div style={{fontWeight:600,fontSize:16,color:'#718096',marginBottom:6}}>Google Fit not connected</div>
+            <div style={{...T.small,marginBottom:14}}>Connect to auto-fill steps and sleep each day. Requires your coach to have configured the server integration.</div>
             <button onClick={onConnectFit} style={{background:ORANGE,border:'none',borderRadius:10,padding:'11px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>Connect Google Fit</button>
           </>
         )}
@@ -1044,6 +1098,7 @@ export default function App() {
   const [reflection,      setReflection]      = useState('')
   const [showReflection,  setShowReflection]  = useState(false)
   const [sendStatus,      setSendStatus]      = useState('idle')
+  const [hasSentToday,    setHasSentToday]    = useState(false)
   const [historicData,    setHistoricData]    = useState([])
   const [graphDays,       setGraphDays]       = useState(30)
   const [loadingGraphs,   setLoadingGraphs]   = useState(false)
@@ -1057,6 +1112,7 @@ export default function App() {
   const [weekData,        setWeekData]        = useState([])
   const [syncedCount,     setSyncedCount]     = useState(0)
   const [fitConnected,    setFitConnected]    = useState(false)
+  const [fitStatus,       setFitStatus]       = useState('checking') // 'checking'|'idle'|'connecting'|'error'
   const [autoFilled,      setAutoFilled]      = useState({})
   const [clientTargets,   setClientTargets]   = useState(DEFAULT_TARGETS)
   const [targetSource,    setTargetSource]    = useState("defaults")
@@ -1100,36 +1156,35 @@ export default function App() {
     return()=>{window.removeEventListener('online',onOn);window.removeEventListener('offline',onOff);window.removeEventListener('beforeinstallprompt',handler)}
   },[])
 
-  // ── Check Fit connection + auto-fill on open ───────────
+  // ── FIX 1: Google Fit — check connection with proper status states ──
   useEffect(()=>{
-    if (!client || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') return
+    if (!client) return
     const clientId = client.name.trim().toLowerCase().replace(/\s+/g,'-')
-
-    // Check connection status
-    checkFitConnection(APPS_SCRIPT_URL, clientId).then(connected => {
-      setFitConnected(connected)
-      if (!connected) return
-
-      // Fetch today's Fit data via proxy
-      fetchFitData(APPS_SCRIPT_URL, clientId).then(result => {
+    setFitStatus('checking')
+    checkFitConnection(APPS_SCRIPT_URL, clientId)
+      .then(connected => {
+        setFitConnected(connected)
+        setFitStatus('idle')
+        if (!connected) return null
+        return fetchFitData(APPS_SCRIPT_URL, clientId)
+      })
+      .then(result => {
+        if (!result) return
         if (result.connected && result.data) {
-          const data = result.data
           const filled = {}
-          if (data.steps !== null && data.steps !== undefined) filled.steps = data.steps
-          if (data.sleep !== null && data.sleep !== undefined) filled.sleep = data.sleep
+          if (result.data.steps != null) filled.steps = result.data.steps
+          if (result.data.sleep != null) filled.sleep = result.data.sleep
           if (Object.keys(filled).length > 0) {
             setAutoFilled(filled)
             setHabitValues(prev => {
               const next = {...prev}
-              Object.entries(filled).forEach(([k,v]) => {
-                if (prev[k]===undefined||prev[k]==='') next[k]=v
-              })
+              Object.entries(filled).forEach(([k,v]) => { if (prev[k]===undefined||prev[k]==='') next[k]=v })
               return next
             })
           }
         }
       })
-    })
+      .catch(() => setFitStatus('idle'))
   },[client])
 
   // ── Client setup ───────────────────────────────────────
@@ -1142,6 +1197,8 @@ export default function App() {
       if(log)last7.push({date:key,sleep:Number(log.habits?.sleep||0)||null,steps:Number(log.habits?.steps||0)||null,hydration:Number(log.habits?.hydration||0)||null,stress:Number(log.metrics?.stressRPE||0)||null,mood:Number(log.metrics?.mood||0)||null,energy:Number(log.metrics?.energy||0)||null,completion:visibleHabits.length?Math.round(visibleHabits.filter(h=>log.habits?.[h.id]!==undefined&&log.habits?.[h.id]!=='').length/visibleHabits.length*100):0})
     }
     setWeekData(last7)
+    // Restore hasSentToday from LS across page refresh
+    if (LS.get(`sent_${new Date().toISOString().split('T')[0]}`)) setHasSentToday(true)
   },[client])
 
   // ── Fetch coach-set targets ────────────────────────────
@@ -1210,45 +1267,52 @@ export default function App() {
   },[])
   const handleWordmarkTap=()=>{tapCount.current+=1;clearTimeout(tapTimer.current);if(tapCount.current>=5){tapCount.current=0;setCoachUnlocked(true);setShowCoachToast(true);setView('config')}else{tapTimer.current=setTimeout(()=>{tapCount.current=0},2000)}}
 
-  // ── Fetch graphs ────────────────────────────────────────
+  // ── FIX 3: fetchData — graphDays in dep array ensures refetch on tab change AND day switch ──
   const fetchData=useCallback(async()=>{
     if(!client||APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE')return
     setLoadingGraphs(true)
-    // Fix 4: query by clientId slug (lowercase-hyphenated), not display name
     const clientId = client.name.trim().toLowerCase().replace(/\s+/g,'-')
     try{
       const res=await fetch(`${APPS_SCRIPT_URL}?clientId=${encodeURIComponent(clientId)}&days=${graphDays}`)
       const json=await res.json()
-      if(json.success&&json.data)setHistoricData(json.data)
-    }catch{}
+      if(json.success&&json.data) setHistoricData(json.data)
+      else setHistoricData([])
+    }catch{ setHistoricData([]) }
     setLoadingGraphs(false)
   },[client,graphDays])
-  useEffect(()=>{if(view==='progress')fetchData()},[view,fetchData])
+  // FIX 3: fire on view change AND when graphDays changes while on progress tab
+  useEffect(()=>{if(view==='progress')fetchData()},[view,graphDays,fetchData])
 
-  // ── Send log ───────────────────────────────────────────
   const handleSend=async()=>{
-    if(sendStatus!=='idle')return
+    if(sendStatus==='sending')return
     setSendStatus('sending')
     const {ls,ts}=updateStreaks(habitValues,visibleHabits)
     setLogStreak(ls); setTargetStreak(ts)
     const clientId=client?.name?.trim().toLowerCase().replace(/\s+/g,'-')||'unknown'
-    const payload={date:todayKey,clientId,clientName:client?.name||'',clientEmail:client?.email||'',habits:habitValues,metrics:metricValues,cyclePhase:showCycle?cyclePhase:'',reflectionPrompt:DAILY_PROMPTS[promptIdx%DAILY_PROMPTS.length],reflection,habitsCompleted:completedHabits.length,habitsTotal:visibleHabits.length,logStreak:ls.count,targetStreak:ts.count}
-    if(APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'){
-      setTimeout(()=>{
-        setSendStatus('success')
-        if(allGreen){setShowConfetti(true);setTimeout(()=>setShowConfetti(false),3500)}
-        // Fix 2: reset to idle after 4s so client can re-send if needed
-        setTimeout(()=>setSendStatus('idle'),4000)
-      },1200)
-      return
+    const payload={
+      date:todayKey,
+      clientId,
+      clientName:client?.name||'',
+      clientEmail:client?.email||'',
+      habits:habitValues,
+      metrics:metricValues,
+      cyclePhase:showCycle?cyclePhase:'',
+      reflectionPrompt:DAILY_PROMPTS[promptIdx%DAILY_PROMPTS.length],
+      reflection,
+      habitsCompleted:completedHabits.length,
+      habitsTotal:visibleHabits.length,
+      logStreak:ls.count,
+      targetStreak:ts.count,
+      isEdit: hasSentToday, // FIX 6: Apps Script uses this to UPSERT by date+clientId
     }
     if(!navigator.onLine){queueLog(payload,APPS_SCRIPT_URL);setSendStatus('queued');return}
     try{
       await fetch(APPS_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       setTimeout(()=>{
         setSendStatus('success')
+        setHasSentToday(true)
+        LS.set(`sent_${todayKey}`,true)
         if(allGreen){setShowConfetti(true);setTimeout(()=>setShowConfetti(false),3500)}
-        // Fix 2: reset to idle after 4s
         setTimeout(()=>setSendStatus('idle'),4000)
       },1200)
     }catch{
@@ -1349,41 +1413,44 @@ export default function App() {
               const isAuto=autoFilled[h.id]!==undefined
 
               const handleTap=()=>{
-                if (filled) return // already filled — don't overwrite
-                // Populate: auto-fill → yesterday → target
+                if (filled) {
+                  // FIX 5: tap on filled clears so user can re-enter from blank
+                  setHabitValues(v=>({...v,[h.id]:''}))
+                  return
+                }
                 const prefill = autoFilled[h.id] ?? prev ?? h.target
                 setHabitValues(v=>({...v,[h.id]:Number(prefill)}))
               }
 
-              // Track whether value was pre-filled (not manually entered)
-              const isPrefilled = filled && !editMode &&
-                (autoFilled[h.id]===val || prev===val || h.target===val)
-
               return(
-                <div key={h.id} style={{background:filled?bg:WHITE,border:`2px solid ${filled?col:'rgba(28,43,58,0.12)'}`,borderRadius:14,padding:16,cursor:filled?'default':'pointer',position:'relative',transition:'all .15s',boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}} onClick={handleTap}>
+                <div key={h.id} style={{background:filled?bg:WHITE,border:`2px solid ${filled?col:'rgba(28,43,58,0.12)'}`,borderRadius:14,padding:16,position:'relative',transition:'all .15s',boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}}>
                   {isAuto&&<div style={{position:'absolute',top:8,right:8,background:GREEN,color:WHITE,fontSize:10,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",borderRadius:5,padding:'2px 6px',textTransform:'uppercase',letterSpacing:'0.04em'}}>Auto</div>}
-                  {!isAuto&&isPrefilled&&<div style={{position:'absolute',top:8,right:8,background:'rgba(28,43,58,0.35)',color:WHITE,fontSize:10,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",borderRadius:5,padding:'2px 6px',textTransform:'uppercase',letterSpacing:'0.04em'}}>Suggested</div>}
                   <div style={{fontSize:26,marginBottom:8}}>{h.icon}</div>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>{h.label}</div>
                   {filled?(
-                    <div style={{display:'flex',alignItems:'baseline',gap:5}}>
-                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:30,color:col,lineHeight:1}}>{val}</div>
-                      <div style={{fontSize:14,color:col,fontWeight:500}}>{h.unit}</div>
+                    <div>
+                      <div style={{display:'flex',alignItems:'baseline',gap:5,marginBottom:6}}>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:30,color:col,lineHeight:1}}>{val}</div>
+                        <div style={{fontSize:14,color:col,fontWeight:500}}>{h.unit}</div>
+                      </div>
+                      {/* FIX 5: direct input always visible */}
+                      <input type="number" min={h.min} max={h.max} step={h.step} value={val}
+                        onChange={e=>setHabitValues(p=>({...p,[h.id]:e.target.value===''?'':Number(e.target.value)}))}
+                        onClick={e=>e.stopPropagation()}
+                        style={{width:'100%',background:'rgba(255,255,255,0.6)',border:`1px solid ${col}55`,borderRadius:7,padding:'7px 10px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:15,fontWeight:600,outline:'none',boxSizing:'border-box'}}/>
+                      {/* FIX 5: clear button */}
+                      <button onClick={e=>{e.stopPropagation();setHabitValues(v=>({...v,[h.id]:''}))}}
+                        style={{width:'100%',marginTop:5,background:'transparent',border:'1px solid rgba(28,43,58,0.12)',borderRadius:6,padding:'4px',color:'#a0aec0',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:11,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
+                        ✕ Clear
+                      </button>
                     </div>
                   ):(
-                    <div>
+                    <div onClick={handleTap} style={{cursor:'pointer'}}>
                       <div style={{...T.tiny,fontSize:13,marginBottom:8}}>{prev!==undefined?`Yesterday: ${prev} ${h.unit}`:`Target: ${h.target} ${h.unit}`}</div>
                       <div style={{background:NAVY,color:WHITE,borderRadius:8,padding:'8px 10px',textAlign:'center',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,textTransform:'uppercase',letterSpacing:'0.05em'}}>
                         {isAuto?'↩ Auto-filled':prev!==undefined?'↩ Use yesterday':'Tap to fill'}
                       </div>
                     </div>
-                  )}
-                  {/* Edit field when filled */}
-                  {filled&&(
-                    <input type="number" min={h.min} max={h.max} step={h.step} value={val}
-                      onChange={e=>setHabitValues(p=>({...p,[h.id]:e.target.value===''?'':Number(e.target.value)}))}
-                      onClick={e=>e.stopPropagation()}
-                      style={{marginTop:10,width:'100%',background:'rgba(255,255,255,0.6)',border:`1px solid ${col}55`,borderRadius:7,padding:'7px 10px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:15,fontWeight:600,outline:'none',boxSizing:'border-box'}}/>
                   )}
                 </div>
               )
@@ -1425,30 +1492,23 @@ export default function App() {
             </div>
           )}
 
-          {/* Send */}
+          {/* FIX 6: Send — always-visible edit notice once sent, isEdit flag on resend */}
           <Card style={{padding:24}}>
             <div style={{...T.super,marginBottom:6}}>Send Today's Log</div>
             <div style={{...T.small,marginBottom:18}}>Sends your log to your coach and saves it to your progress tracker.</div>
-            <button onClick={handleSend} disabled={sendStatus!=='idle'} style={{width:'100%',background:sendStatus==='success'?GREEN:sendStatus==='queued'?AMBER:sendStatus==='error'?RED:ORANGE,border:'none',borderRadius:12,padding:'18px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:20,letterSpacing:'0.06em',textTransform:'uppercase',cursor:sendStatus==='idle'?'pointer':'default',transition:'background .25s'}}>
-              {sendStatus==='idle'   &&'Send to Coach →'}
+            {hasSentToday && sendStatus==='idle' && (
+              <div style={{marginBottom:14,background:`${ORANGE}10`,borderRadius:9,padding:'10px 12px',display:'flex',alignItems:'center',gap:8,border:`1px solid ${ORANGE}22`}}>
+                <span style={{fontSize:16}}>✏️</span>
+                <div style={{...T.tiny,fontSize:13,flex:1}}>You've already sent today. Edit your values above and send again — it will replace your previous entry.</div>
+              </div>
+            )}
+            <button onClick={handleSend} disabled={sendStatus==='sending'} style={{width:'100%',background:sendStatus==='success'?GREEN:sendStatus==='queued'?AMBER:sendStatus==='error'?RED:ORANGE,border:'none',borderRadius:12,padding:'18px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:20,letterSpacing:'0.06em',textTransform:'uppercase',cursor:sendStatus==='sending'?'wait':'pointer',transition:'background .25s'}}>
+              {sendStatus==='idle'   &&(hasSentToday?'Update Log →':'Send to Coach →')}
               {sendStatus==='sending'&&'Sending...'}
               {sendStatus==='success'&&(allGreen?'🎉 All Green — Sent!':'✓ Sent to Coach')}
               {sendStatus==='queued' &&'📡 Queued — Will Send When Online'}
               {sendStatus==='error'  &&'⚠ Something went wrong'}
             </button>
-            {sendStatus==='success'&&(
-              <div style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <div style={{fontSize:15,color:GREEN}}>Log saved. Your coach will review it shortly.</div>
-                <button onClick={()=>{setSendStatus('idle');setEditMode(true)}} style={{background:'transparent',border:'none',color:ORANGE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer',flexShrink:0,marginLeft:12}}>Edit →</button>
-              </div>
-            )}
-            {editMode&&sendStatus==='idle'&&(
-              <div style={{marginTop:10,background:`${ORANGE}12`,borderRadius:9,padding:'10px 12px',display:'flex',alignItems:'center',gap:8}}>
-                <span style={{fontSize:16}}>✏️</span>
-                <div style={{...T.tiny,fontSize:13,flex:1}}>Edit your values above and tap Send again to update your log.</div>
-                <button onClick={()=>setEditMode(false)} style={{background:'transparent',border:'none',color:'#a0aec0',fontSize:18,cursor:'pointer',lineHeight:1}}>×</button>
-              </div>
-            )}
           </Card>
         </div>
       )}
@@ -1532,6 +1592,7 @@ export default function App() {
         <SettingsScreen
           client={client}
           fitToken={fitConnected}
+          fitStatus={fitStatus}
           clientTargets={clientTargets}
           targetSource={targetSource}
           visibleHabits={visibleHabits}
@@ -1539,15 +1600,21 @@ export default function App() {
           setExportDone={setExportDone}
           onSignOut={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false)}}
           onDeleteRequest={()=>{}}
-          onConnectFit={()=>{
-            const clientId=client.name.trim().toLowerCase().replace(/\s+/g,'-')
-            initiateGoogleFitAuth(APPS_SCRIPT_URL, clientId, client.name)
+          onConnectFit={async()=>{
+            setFitStatus('connecting')
+            try {
+              const clientId=client.name.trim().toLowerCase().replace(/\s+/g,'-')
+              await initiateGoogleFitAuth(APPS_SCRIPT_URL, clientId, client.name)
+              // initiateGoogleFitAuth redirects — if we get here it failed
+              setFitStatus('error')
+            } catch { setFitStatus('error') }
           }}
           onDisconnectFit={async()=>{
             const clientId=client.name.trim().toLowerCase().replace(/\s+/g,'-')
             await disconnectFit(APPS_SCRIPT_URL, clientId)
             setFitConnected(false)
             setAutoFilled({})
+            setFitStatus('idle')
           }}
         />
       )}
