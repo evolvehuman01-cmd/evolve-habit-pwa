@@ -30,7 +30,7 @@ export class ErrorBoundary extends Component {
         >
           Reload App
         </button>
-        {process.env.NODE_ENV==='development'&&this.state.error&&(
+        {this.state.error&&(
           <pre style={{marginTop:20,fontSize:11,color:'#a0aec0',maxWidth:500,overflow:'auto',whiteSpace:'pre-wrap'}}>{this.state.error.toString()}</pre>
         )}
       </div>
