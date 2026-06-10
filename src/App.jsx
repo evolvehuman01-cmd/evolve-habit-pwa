@@ -6,7 +6,38 @@ import {
 } from 'recharts'
 import { initiateGoogleFitAuth, checkFitConnection, fetchFitData, disconnectFit } from './useHealthData.js'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
-import CoachDashboard from './CoachDashboard';
+import CoachDashboard from './CoachDashboard.jsx'
+import { Component } from 'react'
+
+// ── ERROR BOUNDARY ────────────────────────────────────────
+// Catches runtime errors in any child component and shows a
+// recovery UI instead of a blank screen.
+export class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null } }
+  static getDerivedStateFromError(error) { return { hasError: true, error } }
+  componentDidCatch(error, info) { console.error('Evolve:Wellbeing error boundary caught:', error, info) }
+  render() {
+    if (!this.state.hasError) return this.props.children
+    return (
+      <div style={{minHeight:'100vh',background:'#F0EEF5',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24}}>
+        <div style={{fontSize:48,marginBottom:16}}>⚠️</div>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:28,color:'#1C2B3A',textTransform:'uppercase',marginBottom:12}}>Something went wrong</div>
+        <div style={{fontSize:15,color:'#718096',marginBottom:28,textAlign:'center',maxWidth:320,lineHeight:1.6}}>
+          The app hit an unexpected error. Your logged data is safe — it's saved to this device.
+        </div>
+        <button
+          onClick={()=>{ this.setState({hasError:false,error:null}); window.location.reload() }}
+          style={{background:'#F26419',border:'none',borderRadius:12,padding:'14px 28px',color:'#fff',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:18,textTransform:'uppercase',letterSpacing:'0.06em',cursor:'pointer'}}
+        >
+          Reload App
+        </button>
+        {process.env.NODE_ENV==='development'&&this.state.error&&(
+          <pre style={{marginTop:20,fontSize:11,color:'#a0aec0',maxWidth:500,overflow:'auto',whiteSpace:'pre-wrap'}}>{this.state.error.toString()}</pre>
+        )}
+      </div>
+    )
+  }
+};
 
 // ── CONFIG ────────────────────────────────────────────────
 const APP_VERSION       = 'v1.0.0'
@@ -150,9 +181,21 @@ const todayISO  = () => new Date().toISOString().split('T')[0]
 const yesterday = () => { const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().split('T')[0] }
 const dayOfWeek = () => new Date().getDay()
 const hourOfDay = () => new Date().getHours()
-const getWeekKey = () => { const d=new Date(),day=d.getDay(),sun=new Date(d); sun.setDate(d.getDate()+(7-day)%7); return sun.toISOString().split('T')[0] }
+// Week key: Monday-start ISO date of the current week's Monday
+// Matches getWeekSummaryMeta which also uses Monday as week start
+const getWeekKey = () => {
+  const d=new Date(), dow=d.getDay()
+  const monOffset = dow===0 ? -6 : 1-dow
+  const mon=new Date(d); mon.setDate(d.getDate()+monOffset)
+  return mon.toISOString().split('T')[0]
+}
 const getMonthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` }
-const isWeeklyDue  = () => dayOfWeek()===0 && hourOfDay()>=18 && !LS.get(`checkin_weekly_done_${getWeekKey()}`)
+// Weekly check-in: due Sunday 6pm onwards, OR Monday before noon (catch-up window)
+const isWeeklyDue  = () => {
+  const dow=dayOfWeek(), h=hourOfDay(), wk=getWeekKey()
+  if (LS.get(`checkin_weekly_done_${wk}`)) return false
+  return (dow===0 && h>=18) || (dow===1 && h<12)
+}
 const isMonthlyDue = (client) => { const mk=getMonthKey(); if(LS.get(`checkin_monthly_done_${mk}`)) return false; const sd=Math.min(client?.startDay||1,28),td=new Date().getDate(); return td>=sd&&td<=sd+3 }
 
 // ── STREAK HELPERS ────────────────────────────────────────
@@ -166,15 +209,17 @@ function updateStreaks(habitValues, visibleHabits) {
 
   let ls=LS.get('streak_log',{count:0,lastDate:null,best:0})
   if (hasLogged&&ls.lastDate!==today) {
-    // Grace period: only applies when lastDate IS yesterday and it's before 6am
-    // Prevents a 3-day gap being counted as consecutive just because it's 5am
-    const isConsec = ls.lastDate===yest || (ls.lastDate===yest && hourOfDay()<6)
+    // Grace period: if it's before 6am we also allow lastDate===2 days ago
+    // (handles logging at 1am for "yesterday" without breaking the streak)
+    const twoDaysAgo = (() => { const d=new Date(); d.setDate(d.getDate()-2); return d.toISOString().split('T')[0] })()
+    const isConsec = ls.lastDate===yest || (hourOfDay()<6 && ls.lastDate===twoDaysAgo)
     ls.count=isConsec?ls.count+1:1; ls.lastDate=today; ls.best=Math.max(ls.best,ls.count)
     LS.set('streak_log',ls)
   }
   let ts=LS.get('streak_target',{count:0,lastDate:null,best:0})
   if (onTarget&&ts.lastDate!==today) {
-    const isConsec = ts.lastDate===yest || (ts.lastDate===yest && hourOfDay()<6)
+    const twoDaysAgo = (() => { const d=new Date(); d.setDate(d.getDate()-2); return d.toISOString().split('T')[0] })()
+    const isConsec = ts.lastDate===yest || (hourOfDay()<6 && ts.lastDate===twoDaysAgo)
     ts.count=isConsec?ts.count+1:1; ts.lastDate=today; ts.best=Math.max(ts.best,ts.count)
     LS.set('streak_target',ts)
   }
@@ -583,10 +628,16 @@ function SetupScreen({ onComplete }) {
     setErr(''); setStep(2)
   }
   const handleComplete = () => {
+    // Generate a stable UUID — this is the permanent identifier.
+    // Name-derived IDs break if the client's name is ever corrected.
+    const clientId = crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     onComplete({
       name:      name.trim(),
       email:     email.trim(),
       goal,
+      clientId,
       startDay:  Math.min(new Date().getDate(), 28),
       joinedAt:  new Date().toISOString(),
     })
@@ -1149,20 +1200,32 @@ export default function App() {
     const onOff=()=>{}
     window.addEventListener('online',onOn); window.addEventListener('offline',onOff)
 
+    // SW signals us to flush the queue (Background Sync fallback)
+    const onSwMsg=(event)=>{
+      if(event.data?.type==='FLUSH_QUEUE'){
+        flushQueue().then(sent=>{if(sent>0){setSyncedCount(sent);setTimeout(()=>setSyncedCount(0),4000)}})
+      }
+    }
+    navigator.serviceWorker?.addEventListener('message',onSwMsg)
+
     const handler=e=>{e.preventDefault();setDeferredPrompt(e);setShowInstall(true)}
     window.addEventListener('beforeinstallprompt',handler)
     const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent)
     if(isIOS&&!window.navigator.standalone&&!LS.get('install_dismissed'))setShowInstall(true)
 
-    return()=>{window.removeEventListener('online',onOn);window.removeEventListener('offline',onOff);window.removeEventListener('beforeinstallprompt',handler)}
+    return()=>{
+      window.removeEventListener('online',onOn)
+      window.removeEventListener('offline',onOff)
+      window.removeEventListener('beforeinstallprompt',handler)
+      navigator.serviceWorker?.removeEventListener('message',onSwMsg)
+    }
   },[])
 
   // ── FIX 1: Google Fit — check connection with proper status states ──
   useEffect(()=>{
     if (!client) return
-    const clientId = client.name.trim().toLowerCase().replace(/\s+/g,'-')
+    const clientId = client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
     setFitStatus('checking')
-    checkFitConnection(APPS_SCRIPT_URL, clientId)
       .then(connected => {
         setFitConnected(connected)
         setFitStatus('idle')
@@ -1215,7 +1278,7 @@ export default function App() {
       return
     }
     // Fetch fresh from Apps Script
-    const clientId = client.name.trim().toLowerCase().replace(/\s+/g, '-')
+    const clientId = client.clientId || client.name.trim().toLowerCase().replace(/\s+/g, '-')
     fetch(`${APPS_SCRIPT_URL}?action=getTargets&clientId=${encodeURIComponent(clientId)}`)
       .then(r => r.json())
       .then(json => {
@@ -1289,7 +1352,7 @@ export default function App() {
     setSendStatus('sending')
     const {ls,ts}=updateStreaks(habitValues,visibleHabits)
     setLogStreak(ls); setTargetStreak(ts)
-    const clientId=client?.name?.trim().toLowerCase().replace(/\s+/g,'-')||'unknown'
+    const clientId=client?.clientId || client?.name?.trim().toLowerCase().replace(/\s+/g,'-') || 'unknown'
     const payload={
       date:todayKey,
       clientId,
@@ -1304,18 +1367,24 @@ export default function App() {
       habitsTotal:visibleHabits.length,
       logStreak:ls.count,
       targetStreak:ts.count,
-      isEdit: hasSentToday, // FIX 6: Apps Script uses this to UPSERT by date+clientId
+      isEdit: hasSentToday,
     }
-    if(!navigator.onLine){queueLog(payload,APPS_SCRIPT_URL);setSendStatus('queued');return}
+    if(!navigator.onLine){
+      queueLog(payload,APPS_SCRIPT_URL)
+      setSendStatus('queued')
+      return
+    }
     try{
+      // mode:no-cors returns an opaque response — we cannot confirm Apps Script
+      // received and wrote the data. We treat network-level success (no throw)
+      // as "sent" and flag locally. If you later enable CORS on the Apps Script
+      // endpoint this should be updated to check response.ok.
       await fetch(APPS_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-      setTimeout(()=>{
-        setSendStatus('success')
-        setHasSentToday(true)
-        LS.set(`sent_${todayKey}`,true)
-        if(allGreen){setShowConfetti(true);setTimeout(()=>setShowConfetti(false),3500)}
-        setTimeout(()=>setSendStatus('idle'),4000)
-      },1200)
+      setSendStatus('success')
+      setHasSentToday(true)
+      LS.set(`sent_${todayKey}`,true)
+      if(allGreen){setShowConfetti(true);setTimeout(()=>setShowConfetti(false),3500)}
+      setTimeout(()=>setSendStatus('idle'),4000)
     }catch{
       queueLog(payload,APPS_SCRIPT_URL)
       setSendStatus('queued')
@@ -1352,7 +1421,6 @@ export default function App() {
     ...(coachUnlocked?[{v:'config',icon:'🔧',label:'Setup'}]:[]),
   ]
 
-  if(window.location.pathname==='/coach')return<CoachDashboard/>
   if(!client)return<SetupScreen onComplete={handleSetupComplete}/>
 
   return(
@@ -1605,14 +1673,14 @@ export default function App() {
           onConnectFit={async()=>{
             setFitStatus('connecting')
             try {
-              const clientId=client.name.trim().toLowerCase().replace(/\s+/g,'-')
+              const clientId=client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
               await initiateGoogleFitAuth(APPS_SCRIPT_URL, clientId, client.name)
               // initiateGoogleFitAuth redirects — if we get here it failed
               setFitStatus('error')
             } catch { setFitStatus('error') }
           }}
           onDisconnectFit={async()=>{
-            const clientId=client.name.trim().toLowerCase().replace(/\s+/g,'-')
+            const clientId=client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
             await disconnectFit(APPS_SCRIPT_URL, clientId)
             setFitConnected(false)
             setAutoFilled({})
