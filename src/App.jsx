@@ -1220,11 +1220,12 @@ export default function App() {
     }
   },[])
 
-  // ── FIX 1: Google Fit — check connection with proper status states ──
+  // ── Google Fit — check connection ──────────────────────
   useEffect(()=>{
     if (!client) return
     const clientId = client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
     setFitStatus('checking')
+    checkFitConnection(APPS_SCRIPT_URL, clientId)
       .then(connected => {
         setFitConnected(connected)
         setFitStatus('idle')
