@@ -1,4 +1,8 @@
-const CACHE_NAME = 'evolve-wellbeing-v1';
+// ── EVOLVE:WELLBEING SERVICE WORKER ──────────────────────
+// Cache version: bump this on every deploy to force update.
+const CACHE_VERSION = 'v3';
+const CACHE_NAME    = `evolve-wellbeing-${CACHE_VERSION}`;
+
 const OFFLINE_URLS = [
   '/',
   '/index.html',
@@ -15,72 +19,74 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-// ── Activate — clean old caches ───────────────────────────
+// ── Activate — clean ALL old caches ──────────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+      Promise.all(
+        keys
+          .filter(k => k.startsWith('evolve-wellbeing-') && k !== CACHE_NAME)
+          .map(k => caches.delete(k))
+      )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 // ── Fetch — network first, fallback to cache ──────────────
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  // Don't intercept Apps Script calls — they're POST/no-cors anyway
   if (event.request.url.includes('script.google.com')) return;
+  // Don't intercept OneSignal
+  if (event.request.url.includes('onesignal.com')) return;
 
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        // Only cache valid responses
+        if (response && response.status === 200 && response.type !== 'opaque') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
         return response;
       })
-      .catch(() => caches.match(event.request).then(r => r || caches.match('/index.html')))
+      .catch(() =>
+        caches.match(event.request).then(r => r || caches.match('/index.html'))
+      )
   );
 });
 
-// ── Background sync — send queued logs when back online ───
+// ── Background Sync — send queued logs when back online ───
+// Queue lives in localStorage (managed by app). The sync event
+// is registered by the app; we signal back via postMessage.
 self.addEventListener('sync', event => {
   if (event.tag === 'sync-logs') {
-    event.waitUntil(syncQueuedLogs());
+    // Signal the app to flush its localStorage queue.
+    // The app handles the actual sending because it owns the queue.
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        .then(clients => {
+          clients.forEach(c => c.postMessage({ type: 'FLUSH_QUEUE' }));
+        })
+    );
   }
 });
 
-async function syncQueuedLogs() {
-  const cache = await caches.open('evolve-queue-v1');
-  const keys = await cache.keys();
-  for (const req of keys) {
-    const res = await cache.match(req);
-    const payload = await res.json();
-    try {
-      await fetch(payload.url, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload.data),
-      });
-      await cache.delete(req);
-    } catch (_) {}
-  }
-}
-
 // ── Push notifications ─────────────────────────────────────
 self.addEventListener('push', event => {
-  const data = event.data?.json() || {};
+  const data  = event.data?.json() || {};
   const title = data.title || 'Evolve:Wellbeing';
   const body  = data.body  || "Have you logged today? Your coach is waiting. 💪";
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: '/icons/icon-192x192.png',
-      badge: '/icons/icon-96x96.png',
+      icon:    '/icons/icon-192x192.png',
+      badge:   '/icons/icon-96x96.png',
       vibrate: [100, 50, 100],
-      data: { url: '/' },
+      data:    { url: data.url || '/' },
       actions: [
-        { action: 'log', title: 'Log Now' },
-        { action: 'dismiss', title: 'Later' },
+        { action: 'log',     title: 'Log Now' },
+        { action: 'dismiss', title: 'Later'   },
       ],
     })
   );
@@ -89,38 +95,23 @@ self.addEventListener('push', event => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   if (event.action === 'dismiss') return;
+  const target = event.notification.data?.url || '/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       const existing = list.find(c => c.url.includes(self.location.origin));
       if (existing) return existing.focus();
-      return clients.openWindow('/');
+      return clients.openWindow(target);
     })
   );
 });
 
-// ── Daily reminder scheduling ─────────────────────────────
-// Called from the app to schedule 8pm reminders
+// ── Message handler ───────────────────────────────────────
 self.addEventListener('message', event => {
-  if (event.data?.type === 'SCHEDULE_REMINDER') {
-    scheduleDaily();
+  // App requests a cache version check (used on load to detect stale SW)
+  if (event.data?.type === 'GET_VERSION') {
+    event.ports?.[0]?.postMessage({ version: CACHE_VERSION });
   }
 });
-
-function scheduleDaily() {
-  const now = new Date();
-  const next = new Date();
-  next.setHours(20, 0, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
-  const delay = next.getTime() - now.getTime();
-  setTimeout(() => {
-    self.registration.showNotification('Evolve:Wellbeing', {
-      body: "Time to log today 📋 Your coach reviews tomorrow.",
-      icon: '/icons/icon-192x192.png',
-      badge: '/icons/icon-96x96.png',
-      vibrate: [100, 50, 100],
-      data: { url: '/' },
-      actions: [{ action: 'log', title: 'Log Now' }],
-    });
-    scheduleDaily();
-  }, delay);
-}
+// NOTE: scheduleDaily() removed — setTimeout in a SW is unreliable
+// because the browser kills idle SWs. Push notifications are handled
+// entirely by OneSignal (configured in index.html).
