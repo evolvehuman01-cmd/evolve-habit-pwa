@@ -5,8 +5,9 @@
 // ─────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback } from 'react';
 
-const COACH_SECRET = import.meta.env.VITE_COACH_SECRET;  // shared secret
-const DATA_SCRIPT  = import.meta.env.VITE_DATA_SCRIPT_URL;
+const COACH_SECRET  = import.meta.env.VITE_COACH_SECRET;
+const DATA_SCRIPT   = import.meta.env.VITE_DATA_SCRIPT_URL;
+const CONFIG_VALID  = !!COACH_SECRET && !!DATA_SCRIPT;
 
 // ── Utility ──────────────────────────────────────────────────────
 function scriptUrl(params) {
@@ -39,6 +40,13 @@ async function apiPost(body) {
 export default function CoachDashboard() {
 
   const [authed, setAuthed] = useState(false);
+  if (!CONFIG_VALID) return (
+    <div style={{minHeight:'100vh',backgroundColor:'#0f1a24',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}}>
+      <p style={{color:'#ef4444',fontFamily:'Barlow,sans-serif',fontSize:'15px',textAlign:'center'}}>
+        Dashboard not configured.<br/>VITE_COACH_SECRET and VITE_DATA_SCRIPT_URL must be set in Vercel environment variables.
+      </p>
+    </div>
+  );
   if (!authed) return <PasswordGate onSuccess={() => setAuthed(true)} />;
   return <DashboardShell />;
 }
@@ -333,7 +341,7 @@ function HabitAverages({ logs, targets }) {
 
 // ── Logs tab: raw log table ───────────────────────────────────────
 function LogsTab({ logs }) {
-  const sorted = [...logs].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  const sorted = [...logs].sort((a,b) => (b['Date']||b.date||'').localeCompare(a['Date']||a.date||''));
   if (!sorted.length) return <p style={S.emptyText}>No logs yet.</p>;
 
   const keys = Object.keys(sorted[0]).filter(k => k !== 'clientId');
@@ -346,7 +354,7 @@ function LogsTab({ logs }) {
         </thead>
         <tbody>
           {sorted.map((row, i) => (
-            <tr key={`${row.Date || row.date || ''}-${i}`}>
+            <tr key={i}>
               {keys.map(k => <td key={k} style={S.td}>{String(row[k] ?? '')}</td>)}
             </tr>
           ))}
@@ -358,16 +366,16 @@ function LogsTab({ logs }) {
 
 // ── Check-ins tab ─────────────────────────────────────────────────
 function CheckinsTab({ checkins }) {
-  const sorted = [...checkins].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  const sorted = [...checkins].sort((a,b) => (b['Date']||b.date||'').localeCompare(a['Date']||a.date||''));
   if (!sorted.length) return <p style={S.emptyText}>No check-ins submitted yet.</p>;
 
   return (
     <div>
       {sorted.map((c, i) => (
         <div key={i} style={S.checkinCard}>
-          <p style={S.checkinDate}>{c.date} · {c.type || 'check-in'}</p>
+          <p style={S.checkinDate}>{c['Date']||c.date||'No date'} · {c.type || c['Type'] || 'check-in'}</p>
           {Object.entries(c)
-            .filter(([k]) => !['clientId','date','type'].includes(k))
+            .filter(([k]) => !['clientId','date','type','Client ID','Client Name','Submitted At','clientName'].includes(k))
             .map(([k, v]) => (
               <p key={k} style={S.checkinRow}><strong>{k}:</strong> {String(v)}</p>
             ))
@@ -425,7 +433,7 @@ function TargetEditor({ client, onSaved, onCancel }) {
               type={type}
               step={step}
               value={targets[key] ?? ''}
-              onChange={e => setTargets(t => ({ ...t, [key]: e.target.value === '' ? '' : Number(e.target.value) }))}
+              onChange={e => setTargets(t => ({ ...t, [key]: e.target.value }))}
               style={S.input}
             />
           </div>
