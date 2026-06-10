@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Component } from 'react'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -7,7 +7,6 @@ import {
 import { initiateGoogleFitAuth, checkFitConnection, fetchFitData, disconnectFit } from './useHealthData.js'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 import CoachDashboard from './CoachDashboard.jsx'
-import { Component } from 'react'
 
 // ── ERROR BOUNDARY ────────────────────────────────────────
 // Catches runtime errors in any child component and shows a
