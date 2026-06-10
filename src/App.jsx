@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { initiateGoogleFitAuth, checkFitConnection, fetchFitData, disconnectFit } from './useHealthData.js'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
+import CoachDashboard from './CoachDashboard';
 
 // ── CONFIG ────────────────────────────────────────────────
 const APP_VERSION       = 'v1.0.0'
@@ -1351,6 +1352,7 @@ export default function App() {
     ...(coachUnlocked?[{v:'config',icon:'🔧',label:'Setup'}]:[]),
   ]
 
+  if(window.location.pathname==='/coach')return<CoachDashboard/>
   if(!client)return<SetupScreen onComplete={handleSetupComplete}/>
 
   return(
