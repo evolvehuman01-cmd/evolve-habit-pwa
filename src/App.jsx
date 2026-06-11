@@ -7,6 +7,7 @@ import {
 import { initiateGoogleFitAuth, checkFitConnection, fetchFitData, disconnectFit } from './useHealthData.js'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 import CoachDashboard from './CoachDashboard.jsx'
+import { LearnHub, HowToGuidePage, ScienceTopicPage } from './LearnScreen.jsx'
 
 // ── ERROR BOUNDARY ────────────────────────────────────────
 // Catches runtime errors in any child component and shows a
@@ -522,19 +523,204 @@ function WeeklyReportCard({ data, clientTargets }) {
 }
 
 // ── CHECK-IN CARD ─────────────────────────────────────────
+// ── WEEKLY CHECK-IN SUMMARY (client version) ─────────────
+function WeeklyCheckinSummary({ answers }) {
+  const ratingColor = (r) => r >= 8 ? GREEN : r >= 5 ? AMBER : RED
+  const rating = answers.weekRating ?? 5
+  return (
+    <div style={{background:WHITE,borderRadius:14,marginBottom:12,border:`1.5px solid ${GREEN}`,overflow:'hidden'}}>
+      <div style={{background:NAVY,padding:'14px 18px'}}>
+        <div style={{...T.super,color:ORANGE,marginBottom:2}}>Weekly Check-In Complete</div>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:22,color:WHITE,textTransform:'uppercase'}}>Your Week at a Glance</div>
+      </div>
+      <div style={{padding:20}}>
+        {/* Rating */}
+        <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:20,background:CREAM,borderRadius:12,padding:16}}>
+          <div style={{width:64,height:64,borderRadius:'50%',background:ratingColor(rating),display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:28,color:WHITE}}>{rating}</span>
+          </div>
+          <div>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:18,color:NAVY,textTransform:'uppercase'}}>Overall Week Rating</div>
+            <div style={{...T.small,marginTop:3}}>{rating>=8?'Strong week — keep that momentum.':rating>=5?'Solid effort. Small adjustments next week.':'Tough week. Your coach has got you.'}</div>
+          </div>
+        </div>
+
+        {/* Win */}
+        {answers.weekWin && (
+          <div style={{marginBottom:14,background:`${GREEN}10`,borderLeft:`4px solid ${GREEN}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{...T.super,fontSize:12,color:GREEN,marginBottom:4}}>🏆 Your Win This Week</div>
+            <div style={{fontSize:15,color:'#2d3748',lineHeight:1.6,fontStyle:'italic'}}>"{answers.weekWin}"</div>
+          </div>
+        )}
+
+        {/* Focus next week */}
+        {answers.weekFocus && (
+          <div style={{marginBottom:14,background:`${ORANGE}10`,borderLeft:`4px solid ${ORANGE}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{...T.super,fontSize:12,color:ORANGE,marginBottom:4}}>🎯 Your Focus Next Week</div>
+            <div style={{fontSize:15,color:'#2d3748',lineHeight:1.6}}>"{answers.weekFocus}"</div>
+          </div>
+        )}
+
+        {/* Habit highlight + barrier */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+          {answers.habitHighlight && (
+            <div style={{background:CREAM,borderRadius:10,padding:'12px 14px'}}>
+              <div style={{...T.tiny,fontSize:12,marginBottom:4}}>✅ Felt Natural</div>
+              <div style={{fontWeight:700,fontSize:15,color:NAVY}}>{answers.habitHighlight}</div>
+            </div>
+          )}
+          {answers.biggestBarrier && (
+            <div style={{background:CREAM,borderRadius:10,padding:'12px 14px'}}>
+              <div style={{...T.tiny,fontSize:12,marginBottom:4}}>⚡ Biggest Barrier</div>
+              <div style={{fontWeight:700,fontSize:15,color:NAVY}}>{answers.biggestBarrier}</div>
+            </div>
+          )}
+        </div>
+
+        <div style={{background:`${GREEN}12`,border:`1px solid ${GREEN}33`,borderRadius:10,padding:'12px 14px',textAlign:'center'}}>
+          <div style={{fontSize:13,color:GREEN,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:'0.04em',textTransform:'uppercase'}}>✓ Sent to your coach for review</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── MONTHLY CHECK-IN SUMMARY (client version) ────────────
+function MonthlyCheckinSummary({ answers }) {
+  const monthRating   = answers.monthRating   ?? 5
+  const goalProgress  = answers.goalProgress  ?? 5
+  const ratingColor   = (r) => r >= 8 ? GREEN : r >= 5 ? AMBER : RED
+  const progressLabel = goalProgress >= 8 ? 'Nearly there!' : goalProgress >= 5 ? 'Good progress' : 'Keep going'
+
+  return (
+    <div style={{background:WHITE,borderRadius:14,marginBottom:12,border:`1.5px solid ${GREEN}`,overflow:'hidden'}}>
+      {/* Header */}
+      <div style={{background:NAVY,padding:'16px 18px'}}>
+        <div style={{...T.super,color:ORANGE,marginBottom:2}}>Monthly Check-In Complete</div>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:22,color:WHITE,textTransform:'uppercase'}}>Your Month in Review</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.5)',marginTop:4}}>{new Date().toLocaleDateString('en-GB',{month:'long',year:'numeric'})}</div>
+      </div>
+
+      <div style={{padding:20}}>
+        {/* Two score rings */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:20}}>
+          <div style={{background:CREAM,borderRadius:12,padding:'16px 12px',textAlign:'center'}}>
+            <div style={{width:56,height:56,borderRadius:'50%',background:ratingColor(monthRating),display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 8px'}}>
+              <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:26,color:WHITE}}>{monthRating}</span>
+            </div>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,color:NAVY,textTransform:'uppercase'}}>Month Rating</div>
+            <div style={{...T.tiny,fontSize:12,marginTop:2}}>out of 10</div>
+          </div>
+          <div style={{background:CREAM,borderRadius:12,padding:'16px 12px',textAlign:'center'}}>
+            <div style={{width:56,height:56,borderRadius:'50%',background:ratingColor(goalProgress),display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 8px'}}>
+              <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:26,color:WHITE}}>{goalProgress}</span>
+            </div>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,color:NAVY,textTransform:'uppercase'}}>Goal Progress</div>
+            <div style={{...T.tiny,fontSize:12,marginTop:2}}>{progressLabel}</div>
+          </div>
+        </div>
+
+        {/* Biggest positive change */}
+        {answers.biggestChange && (
+          <div style={{marginBottom:14,background:`${GREEN}10`,borderLeft:`4px solid ${GREEN}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{...T.super,fontSize:12,color:GREEN,marginBottom:4}}>🌱 Biggest Positive Change</div>
+            <div style={{fontSize:15,color:'#2d3748',lineHeight:1.6,fontStyle:'italic'}}>"{answers.biggestChange}"</div>
+          </div>
+        )}
+
+        {/* Still struggling */}
+        {answers.stillStruggling && (
+          <div style={{marginBottom:14,background:`${AMBER}10`,borderLeft:`4px solid ${AMBER}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{...T.super,fontSize:12,color:AMBER,marginBottom:4}}>💪 Still Working On</div>
+            <div style={{fontSize:15,color:'#2d3748',lineHeight:1.6,fontStyle:'italic'}}>"{answers.stillStruggling}"</div>
+          </div>
+        )}
+
+        {/* Habit to add */}
+        {answers.habitToAdd && answers.habitToAdd !== 'No changes needed' && answers.habitToAdd !== 'Discuss with coach' && (
+          <div style={{marginBottom:14,background:`${ORANGE}10`,borderLeft:`4px solid ${ORANGE}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{...T.super,fontSize:12,color:ORANGE,marginBottom:4}}>🔄 Habit to Add or Swap</div>
+            <div style={{fontSize:15,color:'#2d3748',fontWeight:600}}>{answers.habitToAdd}</div>
+            <div style={{...T.tiny,marginTop:4,fontSize:13}}>Your coach will review this and update your programme.</div>
+          </div>
+        )}
+        {answers.habitToAdd === 'Discuss with coach' && (
+          <div style={{marginBottom:14,background:`${ORANGE}10`,borderLeft:`4px solid ${ORANGE}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{...T.super,fontSize:12,color:ORANGE,marginBottom:4}}>💬 Habit Changes</div>
+            <div style={{fontSize:15,color:'#2d3748',fontWeight:600}}>Discuss with coach</div>
+            <div style={{...T.tiny,marginTop:4,fontSize:13}}>Your coach will reach out to chat about your next steps.</div>
+          </div>
+        )}
+
+        {/* Coach note */}
+        {answers.monthNote && (
+          <div style={{marginBottom:16,background:CREAM,borderRadius:10,padding:'12px 14px'}}>
+            <div style={{...T.super,fontSize:12,marginBottom:4}}>📝 Your Note to Coach</div>
+            <div style={{fontSize:14,color:'#4a5568',lineHeight:1.6,fontStyle:'italic'}}>"{answers.monthNote}"</div>
+          </div>
+        )}
+
+        {/* What happens next */}
+        <div style={{background:NAVY,borderRadius:12,padding:'14px 16px',marginBottom:0}}>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:ORANGE,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:8}}>What Happens Next</div>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {[
+              {icon:'📊',text:'Your coach receives a full report with all your responses'},
+              {icon:'🎯',text:'Targets may be updated based on your progress'},
+              {icon:'💬',text:'Expect a message from your coach within 48 hours'},
+            ].map((item,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10}}>
+                <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{item.icon}</span>
+                <div style={{fontSize:14,color:'rgba(255,255,255,0.75)',lineHeight:1.5}}>{item.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── CHECK-IN CARD ─────────────────────────────────────────
 function CheckInCard({ type, questions, onSubmit, client }) {
-  const [answers,setAnswers]=useState({})
-  const [step,setStep]=useState(0)
-  const [sending,setSending]=useState(false)
-  const [done,setDone]=useState(false)
-  const q=questions[step], isLast=step===questions.length-1
-  const inp={width:'100%',background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'14px 16px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:17,outline:'none',boxSizing:'border-box'}
-  const handleNext=async()=>{
-    if(isLast){setSending(true);await onSubmit({type,answers,client,submittedAt:new Date().toISOString()});setSending(false);setDone(true);if(type==='weekly')LS.set(`checkin_weekly_done_${getWeekKey()}`,true);else LS.set(`checkin_monthly_done_${getMonthKey()}`,true)}else{setStep(s=>s+1)}
+  const [answers,  setAnswers]  = useState({})
+  const [step,     setStep]     = useState(0)
+  const [sending,  setSending]  = useState(false)
+  const [done,     setDone]     = useState(false)
+  const [submitted,setSubmitted]= useState(null) // saved answers for summary
+
+  const q = questions[step], isLast = step === questions.length - 1
+  const inp = {width:'100%',background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'14px 16px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:17,outline:'none',boxSizing:'border-box'}
+
+  const handleNext = async () => {
+    if (isLast) {
+      setSending(true)
+      await onSubmit({ type, answers, client, submittedAt: new Date().toISOString() })
+      setSending(false)
+      setSubmitted({...answers})
+      setDone(true)
+      if (type === 'weekly')  LS.set(`checkin_weekly_done_${getWeekKey()}`, true)
+      else                    LS.set(`checkin_monthly_done_${getMonthKey()}`, true)
+    } else {
+      setStep(s => s + 1)
+    }
   }
-  const canAdvance=()=>{const v=answers[q.id];if(q.type==='slider')return v!==undefined;if(q.type==='select')return v&&v!=='';return true}
-  if(done)return(<Card style={{textAlign:'center',padding:28,border:`1.5px solid ${GREEN}`}}><div style={{fontSize:40,marginBottom:12}}>✅</div><div style={{...T.h3,fontSize:20,marginBottom:8}}>{type==='weekly'?'Weekly':'Monthly'} Check-In Complete</div><div style={{...T.small}}>Your coach will review your responses.</div></Card>)
-  return(
+
+  const canAdvance = () => {
+    const v = answers[q.id]
+    if (q.type === 'slider') return v !== undefined
+    if (q.type === 'select') return v && v !== ''
+    return true
+  }
+
+  // Show summary card after submission
+  if (done && submitted) {
+    return type === 'monthly'
+      ? <MonthlyCheckinSummary answers={submitted} />
+      : <WeeklyCheckinSummary  answers={submitted} />
+  }
+
+  return (
     <div style={{background:WHITE,borderRadius:14,marginBottom:12,border:`1.5px solid ${ORANGE}`,overflow:'hidden'}}>
       <div style={{background:ORANGE,padding:'14px 18px'}}>
         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:19,color:WHITE,textTransform:'uppercase',letterSpacing:'0.04em'}}>{type==='weekly'?'📋 Weekly Check-In':'📅 Monthly Check-In'}</div>
@@ -921,19 +1107,31 @@ function OneSignalToggle() {
 
   useEffect(() => {
     let cancelled = false
-    const check = async () => {
+
+    const readState = async (OneSignal) => {
       try {
-        if (window.OneSignal && window.OneSignal.User?.PushSubscription) {
-          const isSubscribed = await window.OneSignal.User.PushSubscription.optedIn
-          if (!cancelled) setSubscribed(!!isSubscribed)
-          return
-        }
-      } catch {}
-      if (!cancelled) setSubscribed(false)
+        const isSubscribed = await OneSignal.User.PushSubscription.optedIn
+        if (!cancelled) setSubscribed(!!isSubscribed)
+      } catch {
+        if (!cancelled) setSubscribed(false)
+      }
     }
-    const timer    = setTimeout(check, 500)
-    const fallback = setTimeout(() => { if (!cancelled) setSubscribed(false) }, 2000)
-    return () => { cancelled = true; clearTimeout(timer); clearTimeout(fallback) }
+
+    // OneSignalDeferred guarantees the callback only fires once the SDK
+    // has fully initialized — avoids the race where window.OneSignal
+    // exists as a stub but PushSubscription isn't ready yet, which
+    // previously caused the toggle to show "off" on every reload even
+    // though the underlying subscription was still active.
+    window.OneSignalDeferred = window.OneSignalDeferred || []
+    window.OneSignalDeferred.push(readState)
+
+    // Safety net: if OneSignal genuinely never loads (blocked, offline,
+    // not configured), don't leave the UI stuck on "Checking..." forever.
+    const fallback = setTimeout(() => {
+      if (!cancelled) setSubscribed(s => s === null ? false : s)
+    }, 8000)
+
+    return () => { cancelled = true; clearTimeout(fallback) }
   }, [])
 
   const enable = async () => {
@@ -987,7 +1185,7 @@ function OneSignalToggle() {
   )
 }
 
-function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit }) {
+function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit, onOpenLearn }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const handleDelete = () => {
@@ -1094,6 +1292,17 @@ function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSour
         <OneSignalToggle />
       </Card>
 
+      <Card style={{padding:18,cursor:'pointer'}} onClick={onOpenLearn}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <span style={{fontSize:26}}>📘</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:17,color:NAVY}}>Learn</div>
+            <div style={{...T.small,fontSize:14}}>How-to guide and the science behind your targets</div>
+          </div>
+          <span style={{fontSize:18,color:'#cbd5e0'}}>›</span>
+        </div>
+      </Card>
+
       {/* Delete account */}
       <Card style={{padding:22,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.1)'}`}}>
         <div style={{...T.super,marginBottom:10,color:RED}}>Delete Account</div>
@@ -1139,11 +1348,13 @@ export default function App() {
   const [brokenStreak,    setBrokenStreak]    = useState(0)
   const [showConfetti,    setShowConfetti]    = useState(false)
   const [view,            setView]            = useState('log')
+  const [learnPage,       setLearnPage]       = useState(null) // null | 'hub' | 'guide' | topicId
   const [coachUnlocked,   setCoachUnlocked]   = useState(false)
   const [showCoachToast,  setShowCoachToast]  = useState(false)
   const [activeHabits,    setActiveHabits]    = useState(['sleep','steps','hydration','meals','mindfulness'])
   const [showCycle,       setShowCycle]       = useState(false)
   const [habitValues,     setHabitValues]     = useState({})
+  const [clearedHabits,   setClearedHabits]   = useState({}) // habits the user explicitly cleared — skip prefill on next tap
   const [metricValues,    setMetricValues]    = useState({stressRPE:5,mood:6,energy:6,digestion:7})
   const [cyclePhase,      setCyclePhase]      = useState('')
   const [reflection,      setReflection]      = useState('')
@@ -1188,6 +1399,12 @@ export default function App() {
       if (wasMissed()) {
         const ls=LS.get('streak_log',{count:0,lastDate:null,best:0})
         setBrokenStreak(ls.count)
+        // Reset the live streak to 0 immediately — best is preserved.
+        LS.set('streak_log', {count:0, lastDate:ls.lastDate, best:ls.best})
+        const ts=LS.get('streak_target',{count:0,lastDate:null,best:0})
+        if (Math.floor((Date.now()-new Date(ts.lastDate||0).getTime())/86400000)>=2) {
+          LS.set('streak_target', {count:0, lastDate:ts.lastDate, best:ts.best})
+        }
         setTimeout(()=>setShowStreakBroken(true),400)
       } else {
         setTimeout(()=>setShowQuote(true),200)
@@ -1266,18 +1483,9 @@ export default function App() {
   },[client])
 
   // ── Fetch coach-set targets ────────────────────────────
+  // No cache — fetch fresh on every load so coach changes take effect immediately.
   useEffect(()=>{
     if (!client || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') return
-    // Check cache first — targets don't change daily
-    const cached    = LS.get(`targets_${client.name}`)
-    const cachedAt  = LS.get(`targets_${client.name}_ts`)
-    const oneDay    = 86400000
-    if (cached && cachedAt && Date.now() - cachedAt < oneDay) {
-      setClientTargets(cached.targets)
-      setTargetSource(cached.source || 'coach')
-      return
-    }
-    // Fetch fresh from Apps Script
     const clientId = client.clientId || client.name.trim().toLowerCase().replace(/\s+/g, '-')
     fetch(`${APPS_SCRIPT_URL}?action=getTargets&clientId=${encodeURIComponent(clientId)}`)
       .then(r => r.json())
@@ -1285,11 +1493,9 @@ export default function App() {
         if (json.success && json.targets) {
           setClientTargets(json.targets)
           setTargetSource(json.source || 'defaults')
-          LS.set(`targets_${client.name}`, { targets: json.targets, source: json.source })
-          LS.set(`targets_${client.name}_ts`, Date.now())
         }
       })
-      .catch(() => {}) // Silent fail — defaults already set
+      .catch(() => {}) // Silent fail — defaults already in state
   }, [client])
 
   // ── Keep check-in due state fresh ─────────────────────
@@ -1450,7 +1656,7 @@ export default function App() {
       </div>
 
       {/* ── LOG ── */}
-      {view==='log'&&(
+      {!learnPage && view==='log'&&(
         <div style={{flex:1,maxWidth:600,width:'100%',margin:'0 auto',padding:'20px 14px 110px'}}>
           {/* Date + progress bar — no fraction, just the bar */}
           <div style={{marginBottom:20}}>
@@ -1478,16 +1684,18 @@ export default function App() {
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:4}}>
             {visibleHabits.map(h=>{
               const val=habitValues[h.id], filled=val!==undefined&&val!==''&&val!==null
+              const editing = filled || clearedHabits[h.id] // show input box even when value is blank, post-clear
               const col=habitColor(h,val), bg=habitBg(h,val)
               const prev=LS.get(`log_${yesterday()}`)?.habits?.[h.id]
               const isAuto=autoFilled[h.id]!==undefined
 
+              const handleClear=()=>{
+                setHabitValues(v=>({...v,[h.id]:''}))
+                setClearedHabits(c=>({...c,[h.id]:true}))
+              }
+
               const handleTap=()=>{
-                if (filled) {
-                  // FIX 5: tap on filled clears so user can re-enter from blank
-                  setHabitValues(v=>({...v,[h.id]:''}))
-                  return
-                }
+                if (editing) return // input box already showing — nothing to do
                 const prefill = autoFilled[h.id] ?? prev ?? h.target
                 setHabitValues(v=>({...v,[h.id]:Number(prefill)}))
               }
@@ -1497,19 +1705,23 @@ export default function App() {
                   {isAuto&&<div style={{position:'absolute',top:8,right:8,background:GREEN,color:WHITE,fontSize:10,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",borderRadius:5,padding:'2px 6px',textTransform:'uppercase',letterSpacing:'0.04em'}}>Auto</div>}
                   <div style={{fontSize:26,marginBottom:8}}>{h.icon}</div>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>{h.label}</div>
-                  {filled?(
+                  {editing?(
                     <div>
                       <div style={{display:'flex',alignItems:'baseline',gap:5,marginBottom:6}}>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:30,color:col,lineHeight:1}}>{val}</div>
-                        <div style={{fontSize:14,color:col,fontWeight:500}}>{h.unit}</div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:30,color:filled?col:'#cbd5e0',lineHeight:1}}>{filled?val:'—'}</div>
+                        <div style={{fontSize:14,color:filled?col:'#cbd5e0',fontWeight:500}}>{h.unit}</div>
                       </div>
-                      {/* FIX 5: direct input always visible */}
-                      <input type="number" min={h.min} max={h.max} step={h.step} value={val}
-                        onChange={e=>setHabitValues(p=>({...p,[h.id]:e.target.value===''?'':Number(e.target.value)}))}
+                      {/* FIX 5: direct input always visible, autofocus when freshly cleared */}
+                      <input type="number" min={h.min} max={h.max} step={h.step} value={val??''} autoFocus={!filled}
+                        onChange={e=>{
+                          const v=e.target.value
+                          setHabitValues(p=>({...p,[h.id]:v===''?'':Number(v)}))
+                          if (v!=='') setClearedHabits(c=>{const n={...c};delete n[h.id];return n})
+                        }}
                         onClick={e=>e.stopPropagation()}
                         style={{width:'100%',background:'rgba(255,255,255,0.6)',border:`1px solid ${col}55`,borderRadius:7,padding:'7px 10px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:15,fontWeight:600,outline:'none',boxSizing:'border-box'}}/>
                       {/* FIX 5: clear button */}
-                      <button onClick={e=>{e.stopPropagation();setHabitValues(v=>({...v,[h.id]:''}))}}
+                      <button onClick={e=>{e.stopPropagation();handleClear()}}
                         style={{width:'100%',marginTop:5,background:'transparent',border:'1px solid rgba(28,43,58,0.12)',borderRadius:6,padding:'4px',color:'#a0aec0',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:11,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
                         ✕ Clear
                       </button>
@@ -1584,7 +1796,7 @@ export default function App() {
       )}
 
       {/* ── PROGRESS ── */}
-      {view==='progress'&&(
+      {!learnPage && view==='progress'&&(
         <div style={{flex:1,maxWidth:600,width:'100%',margin:'0 auto',padding:'20px 14px 110px'}}>
 
           {/* Weekly summary at top of Progress */}
@@ -1594,11 +1806,12 @@ export default function App() {
           <HabitCalendar visibleHabits={visibleHabits} onDayTap={day=>setSelectedDay(day)}/>
 
           {/* Time range */}
-          <div style={{display:'flex',gap:8,marginBottom:20,marginTop:8}}>
+          <div style={{display:'flex',gap:8,marginBottom:8,marginTop:8}}>
             {[7,14,30].map(d=>(
               <button key={d} onClick={()=>setGraphDays(d)} style={{flex:1,background:graphDays===d?ORANGE:WHITE,border:`1.5px solid ${graphDays===d?ORANGE:'rgba(28,43,58,0.18)'}`,borderRadius:10,padding:'11px',color:graphDays===d?WHITE:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>{d} Days</button>
             ))}
           </div>
+          <div style={{...T.tiny,fontSize:13,marginBottom:16,textAlign:'center'}}>Rolling {graphDays}-day window — updates daily as new logs come in</div>
 
           {loadingGraphs&&<div style={{textAlign:'center',padding:40,color:'#718096',fontSize:17}}>Loading your progress data...</div>}
 
@@ -1657,8 +1870,23 @@ export default function App() {
         </div>
       )}
 
+      {/* ── LEARN ── */}
+      {learnPage==='hub' && (
+        <LearnHub
+          onOpenGuide={()=>setLearnPage('guide')}
+          onOpenTopic={(id)=>setLearnPage(id)}
+          onBack={()=>setLearnPage(null)}
+        />
+      )}
+      {learnPage==='guide' && (
+        <HowToGuidePage onBack={()=>setLearnPage('hub')} />
+      )}
+      {learnPage && learnPage!=='hub' && learnPage!=='guide' && (
+        <ScienceTopicPage topicId={learnPage} clientTargets={clientTargets} onBack={()=>setLearnPage('hub')} />
+      )}
+
       {/* ── SETTINGS ── */}
-      {view==='settings'&&(
+      {!learnPage && view==='settings'&&(
         <SettingsScreen
           client={client}
           fitToken={fitConnected}
@@ -1668,6 +1896,7 @@ export default function App() {
           visibleHabits={visibleHabits}
           exportDone={exportDone}
           setExportDone={setExportDone}
+          onOpenLearn={()=>setLearnPage('hub')}
           onSignOut={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false)}}
           onDeleteRequest={()=>{}}
           onConnectFit={async()=>{
@@ -1690,7 +1919,7 @@ export default function App() {
       )}
 
       {/* ── COACH CONFIG ── */}
-      {view==='config'&&coachUnlocked&&(
+      {!learnPage && view==='config'&&coachUnlocked&&(
         <div style={{flex:1,maxWidth:600,width:'100%',margin:'0 auto',padding:'20px 14px 110px'}}>
           <div style={{...T.super,marginBottom:4}}>Coach Mode</div>
           <div style={{...T.h2,fontSize:30,marginBottom:22}}>Client Setup</div>
@@ -1727,6 +1956,7 @@ export default function App() {
       )}
 
       {/* Bottom nav */}
+      {!learnPage && (
       <div style={{position:'fixed',bottom:0,left:0,right:0,background:WHITE,borderTop:'1px solid rgba(28,43,58,0.12)',boxShadow:'0 -2px 10px rgba(28,43,58,0.08)',zIndex:50}}>
         <div style={{display:'flex',maxWidth:600,margin:'0 auto'}}>
           {navTabs.map(({v,icon,label})=>(
@@ -1738,6 +1968,7 @@ export default function App() {
           ))}
         </div>
       </div>
+      )}
     </div>
   )
 }
