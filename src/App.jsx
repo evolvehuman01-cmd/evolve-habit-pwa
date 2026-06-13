@@ -196,7 +196,20 @@ const isWeeklyDue  = () => {
   if (LS.get(`checkin_weekly_done_${wk}`)) return false
   return (dow===0 && h>=18) || (dow===1 && h<12)
 }
-const isMonthlyDue = (client) => { const mk=getMonthKey(); if(LS.get(`checkin_monthly_done_${mk}`)) return false; const sd=Math.min(client?.startDay||1,28),td=new Date().getDate(); return td>=sd&&td<=sd+3 }
+// Monthly check-in: due in a 4-day window around the client's join-date anniversary,
+// but only from their SECOND month onwards — never on the join day itself.
+// e.g. joined 13th June -> first monthly check-in window opens ~13th July.
+const isMonthlyDue = (client) => {
+  const mk=getMonthKey(); if(LS.get(`checkin_monthly_done_${mk}`)) return false
+  if (!client?.joinedAt) return false
+  const joined = new Date(client.joinedAt)
+  const now    = new Date()
+  // Months elapsed (calendar months, ignoring day-of-month)
+  const monthsElapsed = (now.getFullYear()-joined.getFullYear())*12 + (now.getMonth()-joined.getMonth())
+  if (monthsElapsed < 1) return false // hasn't reached first anniversary yet
+  const sd=Math.min(client?.startDay||joined.getDate(),28), td=now.getDate()
+  return td>=sd&&td<=sd+3
+}
 
 // ── STREAK HELPERS ────────────────────────────────────────
 const getStreaks = () => ({ ls:LS.get('streak_log',{count:0,lastDate:null,best:0}), ts:LS.get('streak_target',{count:0,lastDate:null,best:0}) })
@@ -251,6 +264,28 @@ const Card = ({children,style={}}) => (
 const SL = ({children}) => (
   <div style={{...T.super,borderBottom:'1.5px solid rgba(28,43,58,0.1)',paddingBottom:9,marginTop:24,marginBottom:14}}>{children}</div>
 )
+// ── COLLAPSIBLE SECTION — used on Settings screen for dropdown cards ──
+function CollapsibleSection({ title, subtitle, icon, defaultOpen=false, badge, children }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={{background:WHITE,borderRadius:14,marginBottom:10,border:'1px solid rgba(28,43,58,0.1)',boxShadow:'0 1px 4px rgba(28,43,58,0.07)',overflow:'hidden'}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',background:'transparent',border:'none',padding:'16px 18px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',textAlign:'left'}}>
+        {icon&&<span style={{fontSize:22,flexShrink:0}}>{icon}</span>}
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:18,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>{title}</div>
+          {subtitle&&<div style={{...T.small,fontSize:13,marginTop:2}}>{subtitle}</div>}
+        </div>
+        {badge}
+        <span style={{fontSize:18,color:'#a0aec0',transform:open?'rotate(180deg)':'none',transition:'transform .15s',flexShrink:0}}>▾</span>
+      </button>
+      {open&&(
+        <div style={{padding:'0 18px 18px'}}>
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
 const CustomTooltip = ({active,payload,label}) => {
   if (!active||!payload?.length) return null
   return <div style={{background:NAVY,border:`1px solid ${ORANGE}`,borderRadius:10,padding:'10px 14px',fontSize:14}}><div style={{color:ORANGE,fontWeight:700,marginBottom:6}}>{label}</div>{payload.map((p,i)=><div key={i} style={{color:WHITE,marginBottom:2}}>{p.name}: <strong>{p.value}</strong></div>)}</div>
@@ -1242,9 +1277,8 @@ function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSour
       <div style={{...T.super,marginBottom:4}}>Account</div>
       <div style={{...T.h2,fontSize:30,marginBottom:22}}>Settings</div>
 
-      {/* Profile */}
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Your Profile</div>
+      {/* Your Profile */}
+      <CollapsibleSection title="Your Profile" icon="👤" defaultOpen>
         <div style={{fontSize:19,fontWeight:700,color:NAVY,marginBottom:4}}>{client.name}</div>
         <div style={{fontSize:16,color:'#718096',marginBottom:4}}>{client.email}</div>
         <div style={{...T.tiny,marginBottom:18,fontSize:13}}>Member since {client.joinedAt?new Date(client.joinedAt).toLocaleDateString('en-GB',''):'Unknown'}</div>
@@ -1253,45 +1287,10 @@ function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSour
           Sign Out of This Device
         </button>
         <div style={{...T.tiny,marginTop:10,lineHeight:1.6,fontSize:13}}>Signing out clears your data from this device only. Your logs remain with your coach.</div>
-      </Card>
+      </CollapsibleSection>
 
-      {/* Google Fit */}
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Health Integration</div>
-        {fitStatus === 'checking' ? (
-          <div style={{height:44,background:'rgba(28,43,58,0.06)',borderRadius:10,display:'flex',alignItems:'center',paddingLeft:14}}>
-            <div style={{...T.tiny,fontSize:14}}>Checking Google Fit status...</div>
-          </div>
-        ) : fitToken ? (
-          <>
-            <div style={{background:GREEN_LIGHT,border:`1px solid ${GREEN}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
-              <span style={{fontSize:18}}>✓</span>
-              <div style={{fontWeight:600,fontSize:16,color:GREEN}}>Google Fit Connected</div>
-            </div>
-            <div style={{...T.small,marginBottom:14}}>Steps and sleep auto-fill from your health data daily.</div>
-            <button onClick={onDisconnectFit} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.2)',borderRadius:10,padding:'11px 22px',color:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>Disconnect</button>
-          </>
-        ) : fitStatus === 'connecting' ? (
-          <div style={{background:`${ORANGE}12`,border:`1px solid ${ORANGE}`,borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:10}}>
-            <span style={{fontSize:18}}>⏳</span>
-            <div style={{fontWeight:600,fontSize:15,color:ORANGE}}>Opening Google authorisation — complete it in the new tab then return here.</div>
-          </div>
-        ) : (
-          <>
-            {fitStatus === 'error' && (
-              <div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'10px 14px',marginBottom:12,fontSize:14,color:RED}}>
-                Could not connect to Google Fit. Check that your coach has configured the integration, then try again.
-              </div>
-            )}
-            <div style={{fontWeight:600,fontSize:16,color:'#718096',marginBottom:6}}>Google Fit not connected</div>
-            <div style={{...T.small,marginBottom:14}}>Connect to auto-fill steps and sleep each day. Requires your coach to have configured the server integration.</div>
-            <button onClick={onConnectFit} style={{background:ORANGE,border:'none',borderRadius:10,padding:'11px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>Connect Google Fit</button>
-          </>
-        )}
-      </Card>
-
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Your Targets</div>
+      {/* Your Targets */}
+      <CollapsibleSection title="Your Targets" icon="🎯">
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
           <div style={{width:10,height:10,borderRadius:'50%',background:targetSource==='coach'?GREEN:AMBER,flexShrink:0}}/>
           <div style={{fontWeight:600,fontSize:16,color:NAVY}}>
@@ -1322,30 +1321,75 @@ function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSour
         {clientTargets.notes&&(
           <div style={{marginTop:12,background:`${ORANGE}10`,borderLeft:`3px solid ${ORANGE}`,borderRadius:8,padding:'10px 12px',fontSize:14,color:'#4a5568',lineHeight:1.6}}>{clientTargets.notes}</div>
         )}
-      </Card>
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Notifications</div>
+      </CollapsibleSection>
+
+      {/* Your Data */}
+      <CollapsibleSection title="Your Data" icon="📤" subtitle="Export your habit logs as a CSV">
+        <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Export Your Logs</div>
+        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
+          Download a CSV file of your last 90 days of habit data. Opens in Excel, Google Sheets, or any spreadsheet app.
+        </div>
+        <button onClick={()=>{exportToCSV(client,visibleHabits);setExportDone(true);setTimeout(()=>setExportDone(false),3000)}}
+          style={{background:exportDone?GREEN:NAVY,border:'none',borderRadius:10,padding:'12px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer',transition:'background .2s'}}>
+          {exportDone?'✓ Downloaded':'Download CSV'}
+        </button>
+      </CollapsibleSection>
+
+      {/* Notifications */}
+      <CollapsibleSection title="Notifications" icon="🔔">
         <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Daily Reminder — 8pm</div>
         <div style={{...T.small,marginBottom:18,lineHeight:1.6}}>
           You receive a push notification at 8pm every evening and a check-in reminder every Sunday at 6pm.
         </div>
         <OneSignalToggle />
-      </Card>
+      </CollapsibleSection>
 
-      <Card style={{padding:18,cursor:'pointer'}} onClick={onOpenLearn}>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
-          <span style={{fontSize:26}}>📘</span>
-          <div style={{flex:1}}>
-            <div style={{fontWeight:700,fontSize:17,color:NAVY}}>Learn</div>
-            <div style={{...T.small,fontSize:14}}>How-to guide and the science behind your targets</div>
+      {/* Health Integration */}
+      <CollapsibleSection title="Health Integration" icon="⌚" subtitle={fitToken?'Google Fit connected':'Connect Google Fit for auto-fill'}>
+        {fitStatus === 'checking' ? (
+          <div style={{height:44,background:'rgba(28,43,58,0.06)',borderRadius:10,display:'flex',alignItems:'center',paddingLeft:14}}>
+            <div style={{...T.tiny,fontSize:14}}>Checking Google Fit status...</div>
           </div>
-          <span style={{fontSize:18,color:'#cbd5e0'}}>›</span>
-        </div>
-      </Card>
+        ) : fitToken ? (
+          <>
+            <div style={{background:GREEN_LIGHT,border:`1px solid ${GREEN}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontSize:18}}>✓</span>
+              <div style={{fontWeight:600,fontSize:16,color:GREEN}}>Google Fit Connected</div>
+            </div>
+            <div style={{...T.small,marginBottom:14}}>Steps and sleep auto-fill from your health data daily.</div>
+            <button onClick={onDisconnectFit} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.2)',borderRadius:10,padding:'11px 22px',color:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>Disconnect</button>
+          </>
+        ) : fitStatus === 'connecting' ? (
+          <div style={{background:`${ORANGE}12`,border:`1px solid ${ORANGE}`,borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:18}}>⏳</span>
+            <div style={{fontWeight:600,fontSize:15,color:ORANGE}}>Opening Google authorisation — complete it in the new tab then return here.</div>
+          </div>
+        ) : (
+          <>
+            {fitStatus === 'error' && (
+              <div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'10px 14px',marginBottom:12,fontSize:14,color:RED}}>
+                Could not connect to Google Fit. Check that your coach has configured the integration, then try again.
+              </div>
+            )}
+            <div style={{fontWeight:600,fontSize:16,color:'#718096',marginBottom:6}}>Google Fit not connected</div>
+            <div style={{...T.small,marginBottom:14}}>Connect to auto-fill steps and sleep each day. Requires your coach to have configured the server integration.</div>
+            <button onClick={onConnectFit} style={{background:ORANGE,border:'none',borderRadius:10,padding:'11px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>Connect Google Fit</button>
+          </>
+        )}
+      </CollapsibleSection>
 
-      {/* Delete account */}
-      <Card style={{padding:22,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.1)'}`}}>
-        <div style={{...T.super,marginBottom:10,color:RED}}>Delete Account</div>
+      {/* Learn — navigates away, not a collapsible card */}
+      <button onClick={onOpenLearn} style={{width:'100%',background:WHITE,borderRadius:14,marginBottom:10,border:'1px solid rgba(28,43,58,0.1)',boxShadow:'0 1px 4px rgba(28,43,58,0.07)',padding:'16px 18px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',textAlign:'left'}}>
+        <span style={{fontSize:22,flexShrink:0}}>📘</span>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:18,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>Learn</div>
+          <div style={{...T.small,fontSize:13,marginTop:2}}>How-to guide and the science behind your targets</div>
+        </div>
+        <span style={{fontSize:18,color:'#cbd5e0'}}>›</span>
+      </button>
+
+      {/* Delete Account */}
+      <CollapsibleSection title="Delete Account" icon="⚠️">
         <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
           This sends a data deletion request to your coach at <strong>evolve.human01@gmail.com</strong>. Your coach will manually remove your data and confirm via email. This cannot be undone.
         </div>
@@ -1357,23 +1401,10 @@ function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSour
         <button onClick={handleDelete} style={{background:deleteConfirm?RED:CREAM,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.2)'}`,borderRadius:10,padding:'11px 22px',color:deleteConfirm?WHITE:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
           {deleteConfirm?'Yes, Send Deletion Request':'Request Account Deletion'}
         </button>
-      </Card>
-
-      {/* Data Export */}
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Your Data</div>
-        <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Export Your Logs</div>
-        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
-          Download a CSV file of your last 90 days of habit data. Opens in Excel, Google Sheets, or any spreadsheet app.
-        </div>
-        <button onClick={()=>{exportToCSV(client,visibleHabits);setExportDone(true);setTimeout(()=>setExportDone(false),3000)}}
-          style={{background:exportDone?GREEN:NAVY,border:'none',borderRadius:10,padding:'12px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer',transition:'background .2s'}}>
-          {exportDone?'✓ Downloaded':'Download CSV'}
-        </button>
-      </Card>
+      </CollapsibleSection>
 
       {/* Version */}
-      <div style={{textAlign:'center',paddingBottom:8}}>
+      <div style={{textAlign:'center',paddingTop:8,paddingBottom:8}}>
         <div style={{...T.tiny,fontSize:12}}>Evolve:Wellbeing {APP_VERSION}</div>
       </div>
     </div>
