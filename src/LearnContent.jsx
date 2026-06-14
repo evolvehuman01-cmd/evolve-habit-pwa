@@ -2,11 +2,6 @@
 // Content data for the in-app "Learn" section: the how-to guide
 // and the science-backed info pages for each target.
 //
-// PHASE 1 (this file, current state): how-to guide is complete.
-// Science topics are scaffolded with placeholder content and an
-// empty `references` array — these get filled in Phase 2, a few
-// topics at a time, with real citations.
-//
 // Each science topic follows this shape:
 // {
 //   id: string            — matches habit/target id (sleep, steps, ...)
@@ -68,10 +63,28 @@ export const SCIENCE_TOPICS = [
     icon: '🌙',
     title: 'Sleep',
     target: (t) => `${t.sleep}h per night`,
-    summary: 'Why sleep duration matters for recovery, mood, and health.',
-    sections: placeholderSections,
-    references: [],
-    status: 'placeholder',
+    summary: 'Why 7–7.5 hours is the evidence-backed sweet spot, and what happens to your body without it.',
+    sections: [
+      {
+        heading: 'What sleep actually does',
+        body: "During sleep, your brain consolidates memories from the day and clears out metabolic waste that builds up while you're awake. Sleep also plays a key role in regulating blood sugar: even short-term sleep restriction in healthy adults has been shown to reduce insulin sensitivity and impair glucose tolerance — the kind of change that, if sustained, raises long-term diabetes risk. Some research also links short sleep to changes in hunger-regulating hormones and weight gain, though evidence on the exact mechanism is mixed.",
+      },
+      {
+        heading: 'Why 7.5 hours?',
+        body: "Large studies tracking millions of people over time consistently find a U-shaped pattern: both too little and too much sleep are linked to higher rates of cardiovascular disease and earlier death, with the lowest risk around 7–7.5 hours. Risk rises faster on the long side — sleeping 9–10 hours regularly is linked to a bigger increase in risk than sleeping 5–6 hours. If you regularly need 9+ hours, it's worth a check-in with your doctor — it can sometimes signal an underlying issue rather than cause one.",
+      },
+      {
+        heading: 'The takeaway',
+        body: "Consistency matters as much as the exact number. Aim for 7–7.5 hours, and keep your sleep and wake times steady — even on weekends. Tonight's a good night to start: pick a wake time you can hit every day this week, and work backwards from there.",
+      },
+    ],
+    references: [
+      { text: 'Itani, O., Jike, M., Watanabe, N., & Kaneita, Y. (2017). Short sleep duration and health outcomes: a systematic review, meta-analysis, and meta-regression. Sleep Medicine, 32, 246-256.' },
+      { text: 'Jike, M., Itani, O., Watanabe, N., Buysse, D.J., & Kaneita, Y. (2018). Long sleep duration and health outcomes: A systematic review, meta-analysis and meta-regression. Sleep Medicine Reviews, 39, 25-36.' },
+      { text: 'Cappuccio, F.P., D\'Elia, L., Strazzullo, P., & Miller, M.A. (2010). Sleep duration and all-cause mortality: a systematic review and meta-analysis of prospective studies. Sleep, 33(5), 585-592.' },
+      { text: 'Spiegel, K., Leproult, R., & Van Cauter, E. (1999). Impact of sleep debt on metabolic and endocrine function. The Lancet, 354(9188), 1435-1439.' },
+    ],
+    status: 'reviewed',
   },
   {
     id: 'steps',
