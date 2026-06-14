@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 import CoachDashboard from './CoachDashboard.jsx'
-import { LearnHub, HowToGuidePage, ScienceTopicPage } from './LearnScreen.jsx'
+import { LearnHub, HowToGuidePage, ScienceTopicPage, SleepHygieneGuidePage } from './LearnScreen.jsx'
 
 // ── ERROR BOUNDARY ────────────────────────────────────────
 // Catches runtime errors in any child component and shows a
@@ -1880,19 +1880,23 @@ export default function App() {
       )}
 
       {/* ── LEARN ── */}
-      {learnPage==='hub' && (
-        <LearnHub
-          onOpenGuide={()=>setLearnPage('guide')}
-          onOpenTopic={(id)=>setLearnPage(id)}
-          onBack={()=>setLearnPage(null)}
-        />
-      )}
-      {learnPage==='guide' && (
-        <HowToGuidePage onBack={()=>setLearnPage('hub')} />
-      )}
-      {learnPage && learnPage!=='hub' && learnPage!=='guide' && (
-        <ScienceTopicPage topicId={learnPage} clientTargets={clientTargets} onBack={()=>setLearnPage('hub')} />
-      )}
+{learnPage==='hub' && (
+  <LearnHub
+    onOpenGuide={()=>setLearnPage('guide')}
+    onOpenSleepHygiene={()=>setLearnPage('sleep-hygiene')}
+    onOpenTopic={(id)=>setLearnPage(id)}
+    onBack={()=>setLearnPage(null)}
+  />
+)}
+{learnPage==='guide' && (
+  <HowToGuidePage onBack={()=>setLearnPage('hub')} />
+)}
+{learnPage==='sleep-hygiene' && (
+  <SleepHygieneGuidePage onBack={()=>setLearnPage('hub')} />
+)}
+{learnPage && learnPage!=='hub' && learnPage!=='guide' && learnPage!=='sleep-hygiene' && (
+  <ScienceTopicPage topicId={learnPage} clientTargets={clientTargets} onBack={()=>setLearnPage('hub')} />
+)}
 
       {/* ── SETTINGS ── */}
       {!learnPage && view==='settings'&&(
