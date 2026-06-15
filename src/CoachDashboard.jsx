@@ -365,23 +365,43 @@ function LogsTab({ logs }) {
 }
 
 // ── Check-ins tab ─────────────────────────────────────────────────
+// FIX: check-in rows use 'Submitted At' and 'Type' — not 'Date'/'date'
+const CHECKIN_SUPPRESS = new Set([
+  'Client ID', 'Client Name', 'Submitted At', 'Type',
+  'clientId', 'clientName', 'date', 'type',
+]);
+
 function CheckinsTab({ checkins }) {
-  const sorted = [...checkins].sort((a,b) => (b['Date']||b.date||'').localeCompare(a['Date']||a.date||''));
+  // Sort newest-first by 'Submitted At' (ISO string from check-in script)
+  const sorted = [...checkins].sort((a, b) => {
+    const aDate = a['Submitted At'] || a.submittedAt || '';
+    const bDate = b['Submitted At'] || b.submittedAt || '';
+    return bDate.localeCompare(aDate);
+  });
+
   if (!sorted.length) return <p style={S.emptyText}>No check-ins submitted yet.</p>;
 
   return (
     <div>
-      {sorted.map((c, i) => (
-        <div key={i} style={S.checkinCard}>
-          <p style={S.checkinDate}>{c['Date']||c.date||'No date'} · {c.type || c['Type'] || 'check-in'}</p>
-          {Object.entries(c)
-            .filter(([k]) => !['clientId','date','type','Client ID','Client Name','Submitted At','clientName'].includes(k))
-            .map(([k, v]) => (
-              <p key={k} style={S.checkinRow}><strong>{k}:</strong> {String(v)}</p>
-            ))
-          }
-        </div>
-      ))}
+      {sorted.map((c, i) => {
+        const submittedAt = c['Submitted At'] || c.submittedAt || '';
+        const dateLabel   = submittedAt
+          ? new Date(submittedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+          : 'No date';
+        const typeLabel   = c['Type'] || c.type || 'check-in';
+
+        return (
+          <div key={i} style={S.checkinCard}>
+            <p style={S.checkinDate}>{dateLabel} · {typeLabel}</p>
+            {Object.entries(c)
+              .filter(([k]) => !CHECKIN_SUPPRESS.has(k))
+              .map(([k, v]) => v !== '' && v !== null && v !== undefined ? (
+                <p key={k} style={S.checkinRow}><strong>{k}:</strong> {String(v)}</p>
+              ) : null)
+            }
+          </div>
+        );
+      })}
     </div>
   );
 }
