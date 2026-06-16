@@ -1,7 +1,7 @@
 // ── LEARN SCREEN ──────────────────────────────────────────
 // Renders the Learn hub (how-to guide + science topic list),
 // the how-to guide itself, individual science topic pages,
-// and the Sleep Hygiene infographic guide.
+// and infographic how-to guides for Sleep, Steps, and Hydration.
 
 import { HOW_TO_GUIDE, SCIENCE_TOPICS } from './LearnContent.jsx'
 
@@ -142,7 +142,7 @@ export function SleepHygieneGuidePage({ onBack }) {
 }
 
 // ── HUB: list of how-to guide + science topics ───────────
-export function LearnHub({ onOpenGuide, onOpenSleepHygiene, onOpenTopic, onBack }) {
+export function LearnHub({ onOpenGuide, onOpenSleepHygiene, onOpenStepsGuide, onOpenHydrationGuide, onOpenTopic, onBack }) {
   return (
     <div style={{flex:1,maxWidth:600,width:'100%',margin:'0 auto',padding:'22px 16px 110px'}}>
       <BackButton onClick={onBack} label="← Settings" />
@@ -159,12 +159,34 @@ export function LearnHub({ onOpenGuide, onOpenSleepHygiene, onOpenTopic, onBack 
         </div>
       </Card>
 
+      <div style={{...T.super,marginTop:20,marginBottom:10,fontSize:13}}>Habit Guides</div>
+
       <Card style={{padding:18,cursor:'pointer'}} onClick={onOpenSleepHygiene}>
         <div style={{display:'flex',alignItems:'center',gap:12}}>
           <span style={{fontSize:28}}>😴</span>
           <div>
             <div style={{fontWeight:700,fontSize:17,color:NAVY}}>Better Sleep, Step by Step</div>
             <div style={{...T.small,fontSize:14}}>Eight evidence-backed habits for better sleep</div>
+          </div>
+        </div>
+      </Card>
+
+      <Card style={{padding:18,cursor:'pointer'}} onClick={onOpenStepsGuide}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <span style={{fontSize:28}}>👟</span>
+          <div>
+            <div style={{fontWeight:700,fontSize:17,color:NAVY}}>Build Your Steps, Step by Step</div>
+            <div style={{...T.small,fontSize:14}}>Make movement the default, not the exception</div>
+          </div>
+        </div>
+      </Card>
+
+      <Card style={{padding:18,cursor:'pointer'}} onClick={onOpenHydrationGuide}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <span style={{fontSize:28}}>💧</span>
+          <div>
+            <div style={{fontWeight:700,fontSize:17,color:NAVY}}>Stay Hydrated, All Day</div>
+            <div style={{...T.small,fontSize:14}}>Spread your intake so you never have to catch up</div>
           </div>
         </div>
       </Card>
@@ -254,6 +276,211 @@ export function ScienceTopicPage({ topicId, clientTargets, onBack }) {
           </ol>
         </Card>
       )}
+    </div>
+  )
+}
+
+// ── STEPS GUIDE ───────────────────────────────────────────
+
+const STEPS_STRUCTURAL = [
+  { icon:'🚗', title:'Park further away by default', nugget:'Structural changes remove the decision entirely — you accumulate steps without thinking about it.' },
+  { icon:'🚶', title:'Walk to local shops instead of driving', nugget:'Replacing short car journeys with walking is one of the most reliable ways to add steps consistently.' },
+  { icon:'📞', title:'Take calls on foot', nugget:'Walking during phone calls is one of the easiest ways to add 1,000–2,000 steps without carving out extra time.' },
+  { icon:'🪜', title:'Take the stairs, always', nugget:'Default to stairs rather than deciding each time — one environmental rule beats daily willpower.' },
+]
+
+const STEPS_DAILY = [
+  { icon:'📊', title:'Know your baseline before chasing a target', nugget:'Check your 7-day average first. Adding 1,000–2,000 steps at a time is more sustainable than jumping straight to 8,000.' },
+  { icon:'🌅', title:'Front-load your steps', nugget:'Step counts drop sharply after 6pm for most people. A morning or lunchtime walk locks in progress early.' },
+  { icon:'📱', title:'Track it, even roughly', nugget:'Self-monitoring is one of the most consistently evidenced behaviour change techniques. Your phone\'s built-in health app is enough.' },
+  { icon:'🤝', title:'Walk with someone when you can', nugget:'Social walking increases both frequency and enjoyment — and builds accountability without the formality of a gym.' },
+  { icon:'📅', title:'Don\'t write off low-step days', nugget:'Hitting 8,000 steps even 1–2 days per week is associated with meaningfully lower mortality risk. Frequency across the week matters more than daily perfection.' },
+]
+
+const STEPS_REFS = [
+  { text:'Paluch, A.E., Bajpai, S., Bassett, D.R., et al. (2021). Daily steps and all-cause mortality: a meta-analysis of 15 international cohorts. The Lancet Public Health, 7(3), e219-e228.' },
+  { text:'Banach, M., Lewek, J., Surma, S., et al. (2023). The association between daily step count and all-cause and cardiovascular mortality: a meta-analysis. European Journal of Preventive Cardiology, 30(18), 1975-1985.' },
+  { text:'Inoue, M., Iso, H., Yamamoto, S., et al. (2008). Daily total physical activity level and premature death in men and women: results from a large-scale population-based cohort study in Japan (JPHC Study). Annals of Epidemiology, 18(7), 522-530.' },
+  { text:'Dempsey, P.C., Rowlands, A.V., Strain, T., et al. (2022). Do the associations of daily steps with mortality and incident cardiovascular disease differ by sedentary time levels? A device-based cohort study. British Journal of Sports Medicine, 57(10), 621-629.' },
+  { text:'Ahmadi, M.N., Clare, P.J., Katzmarzyk, P.T., et al. (2023). Vigorous physical activity, incident heart disease, and cancer: how little is enough? European Heart Journal, 44(23), 2124-2134.' },
+]
+
+const StepsTipCard = ({item, accent, bg}) => (
+  <div style={{
+    background:bg,
+    borderRadius:14,
+    padding:'14px 16px',
+    marginBottom:10,
+    border:`1px solid ${accent}26`,
+    display:'flex',
+    gap:14,
+    alignItems:'flex-start',
+  }}>
+    <div style={{
+      fontSize:22,
+      width:40,
+      height:40,
+      minWidth:40,
+      borderRadius:10,
+      background:WHITE,
+      display:'flex',
+      alignItems:'center',
+      justifyContent:'center',
+    }}>{item.icon}</div>
+    <div style={{flex:1}}>
+      <div style={{fontFamily:"'Barlow',sans-serif",fontWeight:700,fontSize:16,color:NAVY,marginBottom:3}}>{item.title}</div>
+      <div style={{fontFamily:"'Barlow',sans-serif",fontWeight:400,fontSize:13.5,color:'#718096',lineHeight:1.5}}>{item.nugget}</div>
+    </div>
+  </div>
+)
+
+export function StepsGuidePage({ onBack }) {
+  return (
+    <div style={{flex:1,maxWidth:600,width:'100%',margin:'0 auto',padding:'22px 16px 110px'}}>
+      <BackButton onClick={onBack} label="← Learn" />
+      <div style={{...T.super,marginBottom:4}}>How To</div>
+      <div style={{...T.h2,fontSize:30,marginBottom:6}}>Build Your Steps, Step by Step</div>
+      <div style={{fontFamily:"'Barlow',sans-serif",fontWeight:400,fontSize:15,marginBottom:18,color:'#4a5568',lineHeight:1.6}}>
+        The most effective approach to hitting 8,000 steps isn't a dedicated walk — it's making movement the default. Two types of change: set it up once, then do it daily.
+      </div>
+
+      {/* Divider bar */}
+      <div style={{height:6,borderRadius:4,background:`linear-gradient(90deg, ${ORANGE} 0%, ${ORANGE} 50%, ${NAVY} 100%)`,marginBottom:6}} />
+      <div style={{display:'flex',justifyContent:'space-between',marginBottom:18}}>
+        <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,color:ORANGE,textTransform:'uppercase',letterSpacing:'0.06em'}}>Set it up once</span>
+        <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,color:NAVY,textTransform:'uppercase',letterSpacing:'0.06em'}}>Do it daily</span>
+      </div>
+
+      <div style={{...T.groupLabel,color:ORANGE,marginBottom:10}}>🔧 Structural Changes</div>
+      <div style={{fontFamily:"'Barlow',sans-serif",fontSize:13,color:'#718096',marginBottom:12,lineHeight:1.5}}>Set these up once. They work in the background without you having to think about them.</div>
+      {STEPS_STRUCTURAL.map((item,i) => (
+        <StepsTipCard key={i} item={item} accent={ORANGE} bg={`${ORANGE}0D`} />
+      ))}
+
+      <div style={{...T.groupLabel,color:NAVY,marginTop:20,marginBottom:10}}>📋 Daily Habits</div>
+      <div style={{fontFamily:"'Barlow',sans-serif",fontSize:13,color:'#718096',marginBottom:12,lineHeight:1.5}}>These are the active choices that compound over time.</div>
+      {STEPS_DAILY.map((item,i) => (
+        <StepsTipCard key={i} item={item} accent={NAVY} bg={`${NAVY}0D`} />
+      ))}
+
+      <Card style={{padding:18,marginTop:18}}>
+        <div style={{...T.h3,fontSize:18,marginBottom:10}}>References</div>
+        <ol style={{margin:0,paddingLeft:20}}>
+          {STEPS_REFS.map((ref,i) => (
+            <li key={i} style={{fontFamily:"'Barlow',sans-serif",fontWeight:400,fontSize:13,color:'#718096',marginBottom:8,lineHeight:1.5}}>{ref.text}</li>
+          ))}
+        </ol>
+      </Card>
+    </div>
+  )
+}
+
+// ── HYDRATION GUIDE ───────────────────────────────────────
+
+const HYDRATION_MORNING = [
+  { icon:'💧', title:'Start with water before anything else', nugget:'Before coffee, before breakfast. The cue (waking up) already exists — attach drinking to it.' },
+  { icon:'🫙', title:'Fill your bottle before you sit down', nugget:'Keeping water visible is one of the simplest environment changes you can make. Access drives consumption.' },
+]
+
+const HYDRATION_DAY = [
+  { icon:'🍽️', title:'Drink a glass before each meal', nugget:'Habit stacking — attaching a new behaviour to an existing one — is one of the most effective tools for building consistency.' },
+  { icon:'🍵', title:'Count all fluids, not just water', nugget:'Tea, coffee, milk, and water-rich foods all contribute. EFSA\'s target is total fluid intake across all sources, not plain water alone.' },
+  { icon:'🏃', title:'Drink before exercise, not during', nugget:'Even mild dehydration before physical activity impairs performance and increases perceived effort. Don\'t wait until you\'re thirsty.' },
+  { icon:'🌡️', title:'Increase intake in heat or illness', nugget:'Hot weather, fever, vomiting, and diarrhoea all increase fluid loss significantly. Your baseline target isn\'t enough on these days.' },
+]
+
+const HYDRATION_EVENING = [
+  { icon:'🍷', title:'Match every alcoholic drink with water', nugget:'Alcohol is a diuretic — it increases fluid loss. One glass of water per alcoholic drink is a practical minimum.' },
+  { icon:'🟡', title:'Check your urine colour before bed', nugget:'Pale yellow means you\'re on track. Dark yellow or amber means you finished the day behind — adjust tomorrow morning.' },
+]
+
+const HYDRATION_REFS = [
+  { text:'EFSA Panel on Dietetic Products, Nutrition, and Allergies (NDA). (2010). Scientific Opinion on Dietary Reference Values for water. EFSA Journal, 8(3), 1459.' },
+  { text:'Muñoz-Garach, A., García-Fontana, B., & Muñoz-Torres, M. (2023). Water intake, hydration status and 2-year changes in cognitive performance: a prospective cohort study. BMC Medicine, 21(1), 101.' },
+  { text:'Masento, N.A., Golightly, M., Field, D.T., Butler, L.T., & van Reekum, C.M. (2014). Effects of hydration status on cognitive performance and mood. British Journal of Nutrition, 111(10), 1841-1852.' },
+  { text:'Cheuvront, S.N., & Kenefick, R.W. (2014). Dehydration: physiology, assessment, and performance effects. Comprehensive Physiology, 4(1), 257-285.' },
+]
+
+const HydrationCard = ({item, accent, bg}) => (
+  <div style={{
+    background:bg,
+    borderRadius:14,
+    padding:'14px 16px',
+    marginBottom:10,
+    border:`1px solid ${accent}26`,
+    display:'flex',
+    gap:14,
+    alignItems:'flex-start',
+  }}>
+    <div style={{
+      fontSize:22,
+      width:40,
+      height:40,
+      minWidth:40,
+      borderRadius:10,
+      background:WHITE,
+      display:'flex',
+      alignItems:'center',
+      justifyContent:'center',
+    }}>{item.icon}</div>
+    <div style={{flex:1}}>
+      <div style={{fontFamily:"'Barlow',sans-serif",fontWeight:700,fontSize:16,color:NAVY,marginBottom:3}}>{item.title}</div>
+      <div style={{fontFamily:"'Barlow',sans-serif",fontWeight:400,fontSize:13.5,color:'#718096',lineHeight:1.5}}>{item.nugget}</div>
+    </div>
+  </div>
+)
+
+const HydrationTimeline = () => (
+  <div style={{marginBottom:22}}>
+    <div style={{
+      height:10,
+      borderRadius:6,
+      background:`linear-gradient(90deg, ${CREAM} 0%, ${ORANGE} 30%, ${ORANGE} 65%, ${NAVY} 85%, ${NAVY} 100%)`,
+      marginBottom:6,
+    }} />
+    <div style={{display:'flex',justifyContent:'space-between'}}>
+      <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,color:ORANGE,textTransform:'uppercase',letterSpacing:'0.06em'}}>Morning</span>
+      <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,color:ORANGE,textTransform:'uppercase',letterSpacing:'0.06em'}}>During the Day</span>
+      <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:12,color:NAVY,textTransform:'uppercase',letterSpacing:'0.06em'}}>Evening</span>
+    </div>
+  </div>
+)
+
+export function HydrationGuidePage({ onBack }) {
+  return (
+    <div style={{flex:1,maxWidth:600,width:'100%',margin:'0 auto',padding:'22px 16px 110px'}}>
+      <BackButton onClick={onBack} label="← Learn" />
+      <div style={{...T.super,marginBottom:4}}>How To</div>
+      <div style={{...T.h2,fontSize:30,marginBottom:6}}>Stay Hydrated, All Day</div>
+      <div style={{fontFamily:"'Barlow',sans-serif",fontWeight:400,fontSize:15,marginBottom:18,color:'#4a5568',lineHeight:1.6}}>
+        Thirst is a lagging signal — by the time you feel it, you're already mildly dehydrated. These habits spread your intake across the day so you never have to catch up.
+      </div>
+
+      <HydrationTimeline />
+
+      <div style={{...T.groupLabel,color:ORANGE,marginBottom:10}}>🌅 Morning</div>
+      {HYDRATION_MORNING.map((item,i) => (
+        <HydrationCard key={i} item={item} accent={ORANGE} bg={`${ORANGE}0D`} />
+      ))}
+
+      <div style={{...T.groupLabel,color:ORANGE,marginTop:20,marginBottom:10}}>☀️ During the Day</div>
+      {HYDRATION_DAY.map((item,i) => (
+        <HydrationCard key={i} item={item} accent={ORANGE} bg={`${ORANGE}0D`} />
+      ))}
+
+      <div style={{...T.groupLabel,color:NAVY,marginTop:20,marginBottom:10}}>🌙 Evening</div>
+      {HYDRATION_EVENING.map((item,i) => (
+        <HydrationCard key={i} item={item} accent={NAVY} bg={`${NAVY}0D`} />
+      ))}
+
+      <Card style={{padding:18,marginTop:18}}>
+        <div style={{...T.h3,fontSize:18,marginBottom:10}}>References</div>
+        <ol style={{margin:0,paddingLeft:20}}>
+          {HYDRATION_REFS.map((ref,i) => (
+            <li key={i} style={{fontFamily:"'Barlow',sans-serif",fontWeight:400,fontSize:13,color:'#718096',marginBottom:8,lineHeight:1.5}}>{ref.text}</li>
+          ))}
+        </ol>
+      </Card>
     </div>
   )
 }

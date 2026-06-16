@@ -91,20 +91,56 @@ export const SCIENCE_TOPICS = [
     icon: '👟',
     title: 'Daily Steps',
     target: (t) => `${Number(t.steps).toLocaleString()} steps per day`,
-    summary: 'What the research says about step counts and health outcomes.',
-    sections: placeholderSections,
-    references: [],
-    status: 'placeholder',
+    summary: 'Why 8,000 steps — not 10,000 — is the evidence-backed target, and where the 10,000 figure actually came from.',
+    sections: [
+      {
+        heading: 'Where 10,000 steps came from',
+        body: "The 10,000 steps target isn't from science — it came from a 1960s Japanese pedometer marketing campaign. The device was called the Manpo-kei, which literally means '10,000 step meter.' The number was chosen because it was memorable and the Japanese character for 10,000 resembles a person walking — not because a study identified it as optimal. It has been embedded in fitness culture ever since.",
+      },
+      {
+        heading: 'What the evidence actually says',
+        body: "Across 15 international cohort studies tracking nearly 50,000 adults, mortality risk dropped progressively with increasing daily steps — but the benefit levelled off at around 6,000–8,000 steps in adults over 60, and 8,000–10,000 in under-60s. A separate meta-analysis of 17 studies covering over 226,000 people found that each additional 1,000 steps per day was associated with a 15% reduction in all-cause mortality risk, with meaningful protection beginning at around 3,000 steps. The relationship is clear: more is better, especially if you're currently doing very little.",
+      },
+      {
+        heading: 'Why 8,000?',
+        body: "It sits at the top of the well-evidenced range for adults under 60, without demanding the often-unachievable 10,000. One large US cohort study found that hitting 8,000 steps even just 1–2 days per week was associated with meaningfully lower all-cause and cardiovascular mortality over 10 years. Consistency across the week matters more than perfection every day — and every extra 1,000 steps genuinely counts.",
+      },
+    ],
+    references: [
+      { text: 'Paluch, A.E., Bajpai, S., Bassett, D.R., et al. (2021). Daily steps and all-cause mortality: a meta-analysis of 15 international cohorts. The Lancet Public Health, 7(3), e219-e228.' },
+      { text: 'Banach, M., Lewek, J., Surma, S., et al. (2023). The association between daily step count and all-cause and cardiovascular mortality: a meta-analysis. European Journal of Preventive Cardiology, 30(18), 1975-1985.' },
+      { text: 'Dempsey, P.C., Rowlands, A.V., Strain, T., et al. (2022). Do the associations of daily steps with mortality and incident cardiovascular disease differ by sedentary time levels? A device-based cohort study. British Journal of Sports Medicine, 57(10), 621-629.' },
+      { text: 'Saint-Maurice, P.F., Troiano, R.P., Bassett, D.R., et al. (2020). Association of daily step patterns with mortality in US adults. JAMA Internal Medicine, 180(9), 1196-1204.' },
+    ],
+    status: 'reviewed',
   },
   {
     id: 'hydration',
     icon: '💧',
     title: 'Hydration',
     target: (t) => `${t.hydration}L per day`,
-    summary: 'Daily fluid intake guidelines and why hydration matters.',
-    sections: placeholderSections,
-    references: [],
-    status: 'placeholder',
+    summary: 'Why staying hydrated affects your brain, energy, and long-term health — and what your target actually means.',
+    sections: [
+      {
+        heading: 'What hydration actually does',
+        body: "Water is involved in almost every physiological process — temperature regulation, joint lubrication, nutrient transport, and waste removal. The brain is particularly sensitive: a body water loss of around 2% of body weight has been shown to impair attention, executive function, and motor coordination in healthy adults. A 2023 prospective study of nearly 2,000 adults found that poorer physiological hydration status was associated with greater cognitive decline over a two-year period.",
+      },
+      {
+        heading: 'Why 2.5 litres?',
+        body: "The 2.5L target is based on the European Food Safety Authority's (EFSA) 2010 adequate intake for adult men. EFSA's guidance for adult women is 2.0L/day — so if you're female, treat 2.5L as a ceiling to aim for on active or warm days rather than a fixed daily floor. Importantly, this figure covers total fluid intake from all sources: food contributes roughly 20% of your daily total, so tea, coffee, soup, and water-rich foods all count.",
+      },
+      {
+        heading: 'The takeaway',
+        body: "Thirst is a reasonable guide for most healthy adults — but it's a lagging signal, especially in older adults and during exercise. Don't wait until you're thirsty. Keep fluids accessible throughout the day and use urine colour as a practical check: pale yellow is the target. Dark yellow or amber means you're already behind.",
+      },
+    ],
+    references: [
+      { text: 'EFSA Panel on Dietetic Products, Nutrition, and Allergies (NDA). (2010). Scientific Opinion on Dietary Reference Values for water. EFSA Journal, 8(3), 1459.' },
+      { text: 'Muñoz-Garach, A., García-Fontana, B., & Muñoz-Torres, M. (2023). Water intake, hydration status and 2-year changes in cognitive performance: a prospective cohort study. BMC Medicine, 21(1), 101.' },
+      { text: 'Masento, N.A., Golightly, M., Field, D.T., Butler, L.T., & van Reekum, C.M. (2014). Effects of hydration status on cognitive performance and mood. British Journal of Nutrition, 111(10), 1841-1852.' },
+      { text: 'Cheuvront, S.N., & Kenefick, R.W. (2014). Dehydration: physiology, assessment, and performance effects. Comprehensive Physiology, 4(1), 257-285.' },
+    ],
+    status: 'reviewed',
   },
   {
     id: 'meals',
