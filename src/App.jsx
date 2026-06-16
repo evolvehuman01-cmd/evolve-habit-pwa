@@ -1879,11 +1879,13 @@ export default function App() {
         </div>
       )}
 
-      {/* ── LEARN ── */}
+{/* ── LEARN ── */}
 {learnPage==='hub' && (
   <LearnHub
     onOpenGuide={()=>setLearnPage('guide')}
     onOpenSleepHygiene={()=>setLearnPage('sleep-hygiene')}
+    onOpenStepsGuide={()=>setLearnPage('steps-guide')}
+    onOpenHydrationGuide={()=>setLearnPage('hydration-guide')}
     onOpenTopic={(id)=>setLearnPage(id)}
     onBack={()=>setLearnPage(null)}
   />
@@ -1894,7 +1896,13 @@ export default function App() {
 {learnPage==='sleep-hygiene' && (
   <SleepHygieneGuidePage onBack={()=>setLearnPage('hub')} />
 )}
-{learnPage && learnPage!=='hub' && learnPage!=='guide' && learnPage!=='sleep-hygiene' && (
+{learnPage==='steps-guide' && (
+  <StepsGuidePage onBack={()=>setLearnPage('hub')} />
+)}
+{learnPage==='hydration-guide' && (
+  <HydrationGuidePage onBack={()=>setLearnPage('hub')} />
+)}
+{learnPage && learnPage!=='hub' && learnPage!=='guide' && learnPage!=='sleep-hygiene' && learnPage!=='steps-guide' && learnPage!=='hydration-guide' && (
   <ScienceTopicPage topicId={learnPage} clientTargets={clientTargets} onBack={()=>setLearnPage('hub')} />
 )}
 
