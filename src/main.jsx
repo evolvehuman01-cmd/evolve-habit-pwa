@@ -1,15 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App, { ErrorBoundary } from './App.jsx'
-import CoachDashboard from './CoachDashboard.jsx'
+import App from './App.jsx'
+import PrivacyPolicy from './PrivacyPolicy.jsx'
 
-const isCoachRoute = window.location.pathname === '/coach'
-const Root = isCoachRoute ? CoachDashboard : App
+const path = window.location.pathname
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ErrorBoundary>
-      <Root />
-    </ErrorBoundary>
+    {path === '/privacy-policy' ? <PrivacyPolicy /> : <App />}
   </React.StrictMode>
 )
