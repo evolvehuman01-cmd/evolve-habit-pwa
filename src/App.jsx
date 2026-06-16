@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 import CoachDashboard from './CoachDashboard.jsx'
-import { LearnHub, HowToGuidePage, ScienceTopicPage, SleepHygieneGuidePage } from './LearnScreen.jsx'
+import { LearnHub, HowToGuidePage, ScienceTopicPage, SleepHygieneGuidePage, StepsGuidePage, HydrationGuidePage } from './LearnScreen.jsx'
 
 // ── ERROR BOUNDARY ────────────────────────────────────────
 // Catches runtime errors in any child component and shows a
