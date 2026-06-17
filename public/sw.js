@@ -1,6 +1,6 @@
 // ── EVOLVE:WELLBEING SERVICE WORKER ──────────────────────
 // Cache version: bump this on every deploy to force update.
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const CACHE_NAME    = `evolve-wellbeing-${CACHE_VERSION}`;
 
 const OFFLINE_URLS = [
@@ -39,6 +39,12 @@ self.addEventListener('fetch', event => {
   if (event.request.url.includes('script.google.com')) return;
   // Don't intercept OneSignal
   if (event.request.url.includes('onesignal.com')) return;
+
+  // Never cache /coach — always fetch fresh so pathname is correct
+  if (event.request.url.includes('/coach')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)
