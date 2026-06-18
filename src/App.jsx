@@ -426,13 +426,13 @@ function HabitCalendar({ visibleHabits, onDayTap }) {
     <Card>
       <div style={{...T.super,marginBottom:4}}>Last 30 Days</div>
       <div style={{...T.h3,fontSize:20,marginBottom:6}}>Habit Calendar</div>
-      <div style={{...T.tiny,marginBottom:12,fontSize:12}}>Tap any day to see your logged values</div>
+      <div style={{...T.tiny,marginBottom:12,fontSize:12}}>Tap any day to view or log values</div>
       <div style={{display:'flex',flexDirection:'column',gap:5}}>
         {weeks.map((week,wi)=>(
           <div key={wi} style={{display:'flex',gap:5}}>
             {week.map(day=>(
               <div key={day.key}
-                onClick={()=>onDayTap&&onDayTap(day.key)}
+                onClick={()=>onDayTap&&onDayTap(day.key,day.status)}
                 style={{flex:1,aspectRatio:'1',borderRadius:5,background:sc[day.status],border:day.isToday?`2px solid ${NAVY}`:'none',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',transition:'opacity .1s'}}
               >
                 <span style={{fontSize:10,color:day.status==='none'?'#a0aec0':WHITE,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif"}}>{day.day}</span>
@@ -942,7 +942,148 @@ function SetupScreen({ onComplete }) {
   )
 }
 
-// ── DAY DETAIL MODAL ─────────────────────────────────────
+// ── RETRO LOG MODAL ──────────────────────────────────────
+// Allows logging a past day (within 7 days). Sends to coach
+// with isRetro:true flag. Does NOT affect streak counters.
+function RetroLogModal({ date, visibleHabits, client, appsScriptUrl, onClose, onSaved }) {
+  const d         = new Date(date)
+  const dateLabel = d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})
+  const existingLog = LS.get(`log_${date}`)
+
+  const [habitValues,  setHabitValues]  = useState(existingLog?.habits  || {})
+  const [metricValues, setMetricValues] = useState(existingLog?.metrics  || {stressRPE:5,mood:6,energy:6,digestion:7})
+  const [reflection,   setReflection]   = useState(existingLog?.reflection || '')
+  const [sendStatus,   setSendStatus]   = useState('idle')
+
+  const completedHabits = visibleHabits.filter(h=>habitValues[h.id]!==undefined&&habitValues[h.id]!==''&&habitValues[h.id]!==null)
+  const inp = {width:'100%',background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'12px 14px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:16,outline:'none',boxSizing:'border-box'}
+
+  const handleSend = async () => {
+    setSendStatus('sending')
+    const clientId = client?.clientId || client?.name?.trim().toLowerCase().replace(/\s+/g,'-') || 'unknown'
+    const payload = {
+      date,
+      clientId,
+      clientName:  client?.name  || '',
+      clientEmail: client?.email || '',
+      habits:      habitValues,
+      metrics:     metricValues,
+      cyclePhase:  '',
+      reflection,
+      habitsCompleted: completedHabits.length,
+      habitsTotal:     visibleHabits.length,
+      isRetro:  true,
+      isEdit:   !!existingLog,
+      logStreak:    0, // retro never affects streak
+      targetStreak: 0,
+    }
+    // Save to localStorage regardless
+    LS.set(`log_${date}`, { habits:habitValues, metrics:metricValues, cyclePhase:'', reflection, isRetro:true })
+
+    if (!navigator.onLine) {
+      queueLog(payload, appsScriptUrl)
+      setSendStatus('queued')
+      setTimeout(()=>onSaved(date), 1500)
+      return
+    }
+    try {
+      await fetch(appsScriptUrl, {method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      setSendStatus('success')
+      setTimeout(()=>onSaved(date), 1500)
+    } catch {
+      queueLog(payload, appsScriptUrl)
+      setSendStatus('queued')
+      setTimeout(()=>onSaved(date), 1500)
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,zIndex:9990,background:'rgba(28,43,58,0.7)',display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:WHITE,borderRadius:'18px 18px 0 0',width:'100%',maxWidth:600,maxHeight:'90vh',overflow:'auto',paddingBottom:32}}>
+        {/* Handle */}
+        <div style={{display:'flex',justifyContent:'center',padding:'12px 0 4px'}}>
+          <div style={{width:40,height:4,borderRadius:2,background:'rgba(28,43,58,0.15)'}}/>
+        </div>
+        <div style={{padding:'8px 20px 0'}}>
+          {/* Header */}
+          <div style={{background:NAVY,borderRadius:12,padding:'14px 16px',marginBottom:18}}>
+            <div style={{...T.super,color:ORANGE,marginBottom:2}}>Retrospective Log</div>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:22,color:WHITE,textTransform:'uppercase'}}>{dateLabel}</div>
+            <div style={{fontSize:13,color:'rgba(255,255,255,0.5)',marginTop:4}}>This log will be sent to your coach marked as retrospective</div>
+          </div>
+
+          {/* Habits */}
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:10}}>Habits</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:18}}>
+            {visibleHabits.map(h=>{
+              const val = habitValues[h.id]
+              const filled = val!==undefined&&val!==''&&val!==null
+              const col = habitColor(h,val)
+              const bg  = habitBg(h,val)
+
+              if (h.type==='checkbox') {
+                const isYes=val===1, isNo=val===0, cbFilled=val===0||val===1
+                const cbCol=cbFilled?(isYes?GREEN:AMBER):'rgba(28,43,58,0.12)'
+                const cbBg=cbFilled?(isYes?GREEN_LIGHT:AMBER_LIGHT):WHITE
+                return (
+                  <div key={h.id} style={{background:cbBg,border:`2px solid ${cbCol}`,borderRadius:14,padding:14,transition:'all .15s'}}>
+                    <div style={{fontSize:22,marginBottom:6}}>{h.icon}</div>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:8}}>{h.label}</div>
+                    <div style={{display:'flex',gap:6}}>
+                      <button onClick={()=>setHabitValues(p=>({...p,[h.id]:isYes?'':1}))} style={{flex:1,padding:'8px 2px',borderRadius:8,border:`2px solid ${isYes?GREEN:'rgba(28,43,58,0.15)'}`,background:isYes?GREEN:WHITE,color:isYes?WHITE:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:'uppercase',cursor:'pointer'}}>✓ Yes</button>
+                      <button onClick={()=>setHabitValues(p=>({...p,[h.id]:isNo?'':0}))}  style={{flex:1,padding:'8px 2px',borderRadius:8,border:`2px solid ${isNo?AMBER:'rgba(28,43,58,0.15)'}`,background:isNo?AMBER_LIGHT:WHITE,color:isNo?AMBER:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:'uppercase',cursor:'pointer'}}>✕ No</button>
+                    </div>
+                  </div>
+                )
+              }
+
+              return (
+                <div key={h.id} style={{background:filled?bg:WHITE,border:`2px solid ${filled?col:'rgba(28,43,58,0.12)'}`,borderRadius:14,padding:14,transition:'all .15s'}}>
+                  <div style={{fontSize:22,marginBottom:6}}>{h.icon}</div>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:8}}>{h.label}</div>
+                  <input type="number" min={h.min} max={h.max} step={h.step} value={val??''}
+                    onChange={e=>{const v=e.target.value;setHabitValues(p=>({...p,[h.id]:v===''?'':Number(v)}))}}
+                    placeholder={`Target: ${h.target}${h.unit}`}
+                    style={{width:'100%',background:'rgba(255,255,255,0.6)',border:`1px solid ${col}55`,borderRadius:7,padding:'7px 10px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:14,fontWeight:600,outline:'none',boxSizing:'border-box'}}/>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Wellness metrics */}
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:10}}>Wellness</div>
+          {METRICS.map(m=>(
+            <div key={m.id} style={{background:WHITE,borderRadius:12,padding:'12px 14px',marginBottom:10,border:'1px solid rgba(28,43,58,0.1)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                <span style={{fontSize:18}}>{m.icon}</span>
+                <div style={{fontWeight:700,fontSize:15,color:NAVY,flex:1}}>{m.label}</div>
+                <div style={{minWidth:38,textAlign:'center',background:metricColor(m,metricValues[m.id]??5),color:WHITE,borderRadius:8,padding:'3px 7px',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:20}}>{metricValues[m.id]??5}</div>
+              </div>
+              <NumberPicker metric={m} value={metricValues[m.id]} onChange={v=>setMetricValues(p=>({...p,[m.id]:v}))}/>
+            </div>
+          ))}
+
+          {/* Reflection */}
+          <div style={{marginBottom:18}}>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:8}}>Note (optional)</div>
+            <textarea value={reflection} onChange={e=>setReflection(e.target.value)} rows={3} placeholder="Anything to add about this day?" style={{...inp,resize:'vertical',lineHeight:1.6}}/>
+          </div>
+
+          {/* Send button */}
+          <button onClick={handleSend} disabled={sendStatus==='sending'||sendStatus==='success'} style={{width:'100%',background:sendStatus==='success'?GREEN:sendStatus==='queued'?AMBER:ORANGE,border:'none',borderRadius:12,padding:'16px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:18,letterSpacing:'0.06em',textTransform:'uppercase',cursor:sendStatus==='sending'?'wait':'pointer',transition:'background .25s',marginBottom:10}}>
+            {sendStatus==='idle'   &&'Send Retrospective Log →'}
+            {sendStatus==='sending'&&'Sending...'}
+            {sendStatus==='success'&&'✓ Sent to Coach'}
+            {sendStatus==='queued' &&'📡 Queued — Will Send When Online'}
+          </button>
+          <button onClick={onClose} style={{width:'100%',background:'transparent',border:'none',color:'#a0aec0',fontFamily:"'Barlow',sans-serif",fontSize:15,cursor:'pointer',padding:'8px'}}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── DAY DETAIL MODAL ─────────────────────────────────────────────
 // Tapping a calendar day shows actual logged values for that day
 function DayDetailModal({ date, visibleHabits, onClose }) {
   const log = LS.get(`log_${date}`)
@@ -1216,7 +1357,7 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
   const AccordionCard = ({ id, title, subtitle, icon, children, danger }) => {
     const isOpen = openSection === id
     return (
-      <Card style={{marginBottom:10,border:`1.5px solid ${danger&&isOpen?RED:'rgba(28,43,58,0.1)'}`,overflow:'hidden'}}>
+      <Card style={{marginBottom:10,border:`1.5px solid ${danger&&isOpen?RED:'rgba(28,43,58,0.1)'}`,overflow:'hidden',padding:0}}>
         <button
           onClick={()=>toggleSection(id)}
           style={{width:'100%',display:'flex',alignItems:'center',gap:12,padding:'16px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
@@ -1370,6 +1511,7 @@ export default function App() {
   const [clientTargets,   setClientTargets]   = useState(DEFAULT_TARGETS)
   const [targetSource,    setTargetSource]    = useState("defaults")
   const [selectedDay,     setSelectedDay]     = useState(null)  // for DayDetailModal
+  const [retroLogDay,     setRetroLogDay]     = useState(null)  // for RetroLogModal
   const [editMode,        setEditMode]        = useState(false) // edit after send
   const [exportDone,      setExportDone]      = useState(false)
 
@@ -1605,6 +1747,7 @@ export default function App() {
       {showInstall     && <InstallBanner onDismiss={()=>{setShowInstall(false);LS.set('install_dismissed',true)}}/>}
       {showCoachToast  && <CoachToast onDone={()=>setShowCoachToast(false)}/>}
       {selectedDay     && <DayDetailModal date={selectedDay} visibleHabits={visibleHabits} onClose={()=>setSelectedDay(null)}/>}
+      {retroLogDay    && <RetroLogModal date={retroLogDay} visibleHabits={visibleHabits} client={client} appsScriptUrl={APPS_SCRIPT_URL} onClose={()=>setRetroLogDay(null)} onSaved={(day)=>{setRetroLogDay(null)}}/>}
 
       {/* ── STICKY HEADER BLOCK ── */}
       <div style={{position:'sticky',top:0,zIndex:100,flexShrink:0}}>
@@ -1844,7 +1987,14 @@ export default function App() {
           <WeeklyReportCard data={weekData} clientTargets={clientTargets}/>
 
           {/* Calendar — tappable */}
-          <HabitCalendar visibleHabits={visibleHabits} onDayTap={day=>setSelectedDay(day)}/>
+          <HabitCalendar visibleHabits={visibleHabits} onDayTap={(day,status)=>{
+            const daysAgo = Math.floor((Date.now()-new Date(day).getTime())/86400000)
+            const isToday = daysAgo === 0
+            if (isToday) return // today's log is on the main log screen
+            if (status !== 'none') { setSelectedDay(day); return } // has a log — show read-only
+            if (daysAgo <= 7) { setRetroLogDay(day) } // empty + within 7 days — retro log
+            else { setSelectedDay(day) } // empty + older — show empty detail
+          }}/>
 
           {/* Time range */}
           <div style={{display:'flex',gap:8,marginBottom:8,marginTop:8}}>
