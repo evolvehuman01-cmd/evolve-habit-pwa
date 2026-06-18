@@ -4,7 +4,6 @@ import {
   CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ReferenceLine, ComposedChart, Area
 } from 'recharts'
-import { initiateGoogleFitAuth, checkFitConnection, fetchFitData, disconnectFit } from './useHealthData.js'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 import CoachDashboard from './CoachDashboard.jsx'
 import { LearnHub, HowToGuidePage, ScienceTopicPage } from './LearnScreen.jsx'
@@ -1189,7 +1188,7 @@ function OneSignalToggle() {
   )
 }
 
-function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit, onOpenLearn }) {
+function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onOpenLearn }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const handleDelete = () => {
@@ -1219,40 +1218,7 @@ function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSour
         <div style={{...T.tiny,marginTop:10,lineHeight:1.6,fontSize:13}}>Signing out clears your data from this device only. Your logs remain with your coach.</div>
       </Card>
 
-      {/* Google Fit */}
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Health Integration</div>
-        {fitStatus === 'checking' ? (
-          <div style={{height:44,background:'rgba(28,43,58,0.06)',borderRadius:10,display:'flex',alignItems:'center',paddingLeft:14}}>
-            <div style={{...T.tiny,fontSize:14}}>Checking Google Fit status...</div>
-          </div>
-        ) : fitToken ? (
-          <>
-            <div style={{background:GREEN_LIGHT,border:`1px solid ${GREEN}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
-              <span style={{fontSize:18}}>✓</span>
-              <div style={{fontWeight:600,fontSize:16,color:GREEN}}>Google Fit Connected</div>
-            </div>
-            <div style={{...T.small,marginBottom:14}}>Steps and sleep auto-fill from your health data daily.</div>
-            <button onClick={onDisconnectFit} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.2)',borderRadius:10,padding:'11px 22px',color:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>Disconnect</button>
-          </>
-        ) : fitStatus === 'connecting' ? (
-          <div style={{background:`${ORANGE}12`,border:`1px solid ${ORANGE}`,borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:10}}>
-            <span style={{fontSize:18}}>⏳</span>
-            <div style={{fontWeight:600,fontSize:15,color:ORANGE}}>Opening Google authorisation — complete it in the new tab then return here.</div>
-          </div>
-        ) : (
-          <>
-            {fitStatus === 'error' && (
-              <div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'10px 14px',marginBottom:12,fontSize:14,color:RED}}>
-                Could not connect to Google Fit. Check that your coach has configured the integration, then try again.
-              </div>
-            )}
-            <div style={{fontWeight:600,fontSize:16,color:'#718096',marginBottom:6}}>Google Fit not connected</div>
-            <div style={{...T.small,marginBottom:14}}>Connect to auto-fill steps and sleep each day. Requires your coach to have configured the server integration.</div>
-            <button onClick={onConnectFit} style={{background:ORANGE,border:'none',borderRadius:10,padding:'11px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>Connect Google Fit</button>
-          </>
-        )}
-      </Card>
+
 
       <Card style={{padding:22,marginBottom:14}}>
         <div style={{...T.super,marginBottom:10}}>Your Targets</div>
@@ -1377,8 +1343,6 @@ export default function App() {
   const [monthlyDue,      setMonthlyDue]      = useState(false)
   const [weekData,        setWeekData]        = useState([])
   const [syncedCount,     setSyncedCount]     = useState(0)
-  const [fitConnected,    setFitConnected]    = useState(false)
-  const [fitStatus,       setFitStatus]       = useState('checking') // 'checking'|'idle'|'connecting'|'error'
   const [autoFilled,      setAutoFilled]      = useState({})
   const [clientTargets,   setClientTargets]   = useState(DEFAULT_TARGETS)
   const [targetSource,    setTargetSource]    = useState("defaults")
@@ -1441,36 +1405,7 @@ export default function App() {
     }
   },[])
 
-  // ── Google Fit — check connection ──────────────────────
-  useEffect(()=>{
-    if (!client) return
-    const clientId = client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
-    setFitStatus('checking')
-    checkFitConnection(APPS_SCRIPT_URL, clientId)
-      .then(connected => {
-        setFitConnected(connected)
-        setFitStatus('idle')
-        if (!connected) return null
-        return fetchFitData(APPS_SCRIPT_URL, clientId)
-      })
-      .then(result => {
-        if (!result) return
-        if (result.connected && result.data) {
-          const filled = {}
-          if (result.data.steps != null) filled.steps = result.data.steps
-          if (result.data.sleep != null) filled.sleep = result.data.sleep
-          if (Object.keys(filled).length > 0) {
-            setAutoFilled(filled)
-            setHabitValues(prev => {
-              const next = {...prev}
-              Object.entries(filled).forEach(([k,v]) => { if (prev[k]===undefined||prev[k]==='') next[k]=v })
-              return next
-            })
-          }
-        }
-      })
-      .catch(() => setFitStatus('idle'))
-  },[client])
+
 
   // ── Client setup ───────────────────────────────────────
   useEffect(()=>{
@@ -1926,8 +1861,6 @@ export default function App() {
       {!learnPage && view==='settings'&&(
         <SettingsScreen
           client={client}
-          fitToken={fitConnected}
-          fitStatus={fitStatus}
           clientTargets={clientTargets}
           targetSource={targetSource}
           visibleHabits={visibleHabits}
@@ -1936,22 +1869,6 @@ export default function App() {
           onOpenLearn={()=>setLearnPage('hub')}
           onSignOut={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false)}}
           onDeleteRequest={()=>{}}
-          onConnectFit={async()=>{
-            setFitStatus('connecting')
-            try {
-              const clientId=client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
-              await initiateGoogleFitAuth(APPS_SCRIPT_URL, clientId, client.name)
-              // initiateGoogleFitAuth redirects — if we get here it failed
-              setFitStatus('error')
-            } catch { setFitStatus('error') }
-          }}
-          onDisconnectFit={async()=>{
-            const clientId=client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
-            await disconnectFit(APPS_SCRIPT_URL, clientId)
-            setFitConnected(false)
-            setAutoFilled({})
-            setFitStatus('idle')
-          }}
         />
       )}
 
