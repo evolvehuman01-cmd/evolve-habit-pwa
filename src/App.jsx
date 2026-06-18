@@ -1209,13 +1209,49 @@ function OneSignalToggle() {
 
 function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onOpenLearn }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [openSection, setOpenSection]     = useState(null)
+
+  const toggleSection = (id) => setOpenSection(prev => prev === id ? null : id)
+
+  const AccordionCard = ({ id, title, subtitle, icon, children, danger }) => {
+    const isOpen = openSection === id
+    return (
+      <Card style={{marginBottom:10,border:`1.5px solid ${danger&&isOpen?RED:'rgba(28,43,58,0.1)'}`,overflow:'hidden'}}>
+        <button
+          onClick={()=>toggleSection(id)}
+          style={{width:'100%',display:'flex',alignItems:'center',gap:12,padding:'16px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+          {icon&&<span style={{fontSize:22,flexShrink:0}}>{icon}</span>}
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:danger?RED:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>{title}</div>
+            {subtitle&&<div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>{subtitle}</div>}
+          </div>
+          <span style={{fontSize:18,color:'#cbd5e0',transform:isOpen?'rotate(90deg)':'rotate(0deg)',transition:'transform .2s',flexShrink:0}}>›</span>
+        </button>
+        {isOpen&&(
+          <div style={{padding:'0 18px 18px'}}>
+            <div style={{height:1,background:'rgba(28,43,58,0.08)',marginBottom:16}}/>
+            {children}
+          </div>
+        )}
+      </Card>
+    )
+  }
 
   const handleDelete = () => {
     if (!deleteConfirm) { setDeleteConfirm(true); return }
-    // Send deletion request email to coach
-    const subject = encodeURIComponent(`Account Deletion Request — ${client.name}`)
-    const body    = encodeURIComponent(`Hi,\n\nI would like to request deletion of my Evolve:Wellbeing account and all associated data.\n\nName: ${client.name}\nEmail: ${client.email}\nJoined: ${client.joinedAt ? new Date(client.joinedAt).toLocaleDateString('en-GB') : 'Unknown'}\n\nPlease confirm once my data has been removed.\n\nThank you`)
-    window.open(`mailto:evolve.human01@gmail.com?subject=${subject}&body=${body}`)
+    const subject = encodeURIComponent('Account Deletion Request — ' + client.name)
+    const body    = encodeURIComponent('Hi,
+
+I would like to request deletion of my Evolve:Wellbeing account and all associated data.
+
+Name: ' + client.name + '
+Email: ' + client.email + '
+Joined: ' + (client.joinedAt ? new Date(client.joinedAt).toLocaleDateString('en-GB') : 'Unknown') + '
+
+Please confirm once my data has been removed.
+
+Thank you')
+    window.open('mailto:evolve.human01@gmail.com?subject=' + subject + '&body=' + body)
     onDeleteRequest()
   }
 
@@ -1224,9 +1260,7 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
       <div style={{...T.super,marginBottom:4}}>Account</div>
       <div style={{...T.h2,fontSize:30,marginBottom:22}}>Settings</div>
 
-      {/* Profile */}
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Your Profile</div>
+      <AccordionCard id="profile" title="Your Profile" icon="👤" subtitle={client.name}>
         <div style={{fontSize:19,fontWeight:700,color:NAVY,marginBottom:4}}>{client.name}</div>
         <div style={{fontSize:16,color:'#718096',marginBottom:4}}>{client.email}</div>
         <div style={{...T.tiny,marginBottom:18,fontSize:13}}>Member since {client.joinedAt?new Date(client.joinedAt).toLocaleDateString('en-GB',''):'Unknown'}</div>
@@ -1235,26 +1269,21 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
           Sign Out of This Device
         </button>
         <div style={{...T.tiny,marginTop:10,lineHeight:1.6,fontSize:13}}>Signing out clears your data from this device only. Your logs remain with your coach.</div>
-      </Card>
+      </AccordionCard>
 
-
-
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Your Targets</div>
+      <AccordionCard id="targets" title="Your Targets" icon="🎯" subtitle={targetSource==='coach'?'Coach-set targets active':'Default targets active'}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
           <div style={{width:10,height:10,borderRadius:'50%',background:targetSource==='coach'?GREEN:AMBER,flexShrink:0}}/>
-          <div style={{fontWeight:600,fontSize:16,color:NAVY}}>
-            {targetSource==='coach' ? 'Coach-set targets active' : 'Default targets active'}
-          </div>
+          <div style={{fontWeight:600,fontSize:16,color:NAVY}}>{targetSource==='coach' ? 'Coach-set targets active' : 'Default targets active'}</div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
           {[
-            {label:'Sleep',    value:`${clientTargets.sleep}h`,        icon:'🌙'},
-            {label:'Steps',    value:Number(clientTargets.steps).toLocaleString(), icon:'👟'},
-            {label:'Hydration',value:`${clientTargets.hydration}L`,    icon:'💧'},
-            {label:'Meals',    value:`${clientTargets.meals} meals`,   icon:'🥗'},
-            {label:'Mindfulness',value:`${clientTargets.mindfulness}min`,icon:'🧠'},
-            {label:'Mobility', value:`${clientTargets.mobility}min`,   icon:'🧘'},
+            {label:'Sleep',       value:clientTargets.sleep+'h',                       icon:'🌙'},
+            {label:'Steps',       value:Number(clientTargets.steps).toLocaleString(),  icon:'👟'},
+            {label:'Hydration',   value:clientTargets.hydration+'L',                   icon:'💧'},
+            {label:'Meals',       value:clientTargets.meals+' meals',                  icon:'🥗'},
+            {label:'Mindfulness', value:clientTargets.mindfulness+'min',               icon:'🧠'},
+            {label:'Mobility',    value:clientTargets.mobility+'min',                  icon:'🧘'},
           ].map(t=>(
             <div key={t.label} style={{background:CREAM,borderRadius:9,padding:'10px 12px',display:'flex',alignItems:'center',gap:8}}>
               <span style={{fontSize:16}}>{t.icon}</span>
@@ -1265,69 +1294,53 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
             </div>
           ))}
         </div>
-        {targetSource==='defaults'&&(
-          <div style={{...T.tiny,marginTop:12,lineHeight:1.6,fontSize:13}}>Your coach hasn't set individual targets yet. Evidence-based defaults are in use.</div>
-        )}
-        {clientTargets.notes&&(
-          <div style={{marginTop:12,background:`${ORANGE}10`,borderLeft:`3px solid ${ORANGE}`,borderRadius:8,padding:'10px 12px',fontSize:14,color:'#4a5568',lineHeight:1.6}}>{clientTargets.notes}</div>
-        )}
-      </Card>
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Notifications</div>
-        <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Daily Reminder — 8pm</div>
-        <div style={{...T.small,marginBottom:18,lineHeight:1.6}}>
-          You receive a push notification at 8pm every evening and a check-in reminder every Sunday at 6pm.
-        </div>
-        <OneSignalToggle />
-      </Card>
+        {targetSource==='defaults'&&<div style={{...T.tiny,marginTop:12,lineHeight:1.6,fontSize:13}}>Your coach has not set individual targets yet. Evidence-based defaults are in use.</div>}
+        {clientTargets.notes&&<div style={{marginTop:12,background:`${ORANGE}10`,borderLeft:`3px solid ${ORANGE}`,borderRadius:8,padding:'10px 12px',fontSize:14,color:'#4a5568',lineHeight:1.6}}>{clientTargets.notes}</div>}
+      </AccordionCard>
 
-      <Card style={{padding:18,cursor:'pointer'}} onClick={onOpenLearn}>
+      <AccordionCard id="notifications" title="Notifications" icon="🔔" subtitle="Daily reminder at 8pm">
+        <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Daily Reminder — 8pm</div>
+        <div style={{...T.small,marginBottom:18,lineHeight:1.6}}>You receive a push notification at 8pm every evening and a check-in reminder every Sunday at 6pm.</div>
+        <OneSignalToggle />
+      </AccordionCard>
+
+      <Card style={{marginBottom:10,padding:18,cursor:'pointer'}} onClick={onOpenLearn}>
         <div style={{display:'flex',alignItems:'center',gap:12}}>
-          <span style={{fontSize:26}}>📘</span>
+          <span style={{fontSize:22}}>📘</span>
           <div style={{flex:1}}>
-            <div style={{fontWeight:700,fontSize:17,color:NAVY}}>Learn</div>
-            <div style={{...T.small,fontSize:14}}>How-to guide and the science behind your targets</div>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>Learn</div>
+            <div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>How-to guide and the science behind your targets</div>
           </div>
           <span style={{fontSize:18,color:'#cbd5e0'}}>›</span>
         </div>
       </Card>
 
-      {/* Delete account */}
-      <Card style={{padding:22,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.1)'}`}}>
-        <div style={{...T.super,marginBottom:10,color:RED}}>Delete Account</div>
-        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
-          This sends a data deletion request to your coach at <strong>evolve.human01@gmail.com</strong>. Your coach will manually remove your data and confirm via email. This cannot be undone.
-        </div>
-        {deleteConfirm && (
-          <div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'12px 14px',marginBottom:14,fontSize:15,color:RED,fontWeight:600}}>
-            Are you sure? This will open your email app to send a deletion request to your coach.
-          </div>
-        )}
-        <button onClick={handleDelete} style={{background:deleteConfirm?RED:CREAM,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.2)'}`,borderRadius:10,padding:'11px 22px',color:deleteConfirm?WHITE:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
-          {deleteConfirm?'Yes, Send Deletion Request':'Request Account Deletion'}
-        </button>
-      </Card>
-
-      {/* Data Export */}
-      <Card style={{padding:22,marginBottom:14}}>
-        <div style={{...T.super,marginBottom:10}}>Your Data</div>
+      <AccordionCard id="export" title="Your Data" icon="📊" subtitle="Export your logs as CSV">
         <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Export Your Logs</div>
-        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
-          Download a CSV file of your last 90 days of habit data. Opens in Excel, Google Sheets, or any spreadsheet app.
-        </div>
+        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>Download a CSV file of your last 90 days of habit data. Opens in Excel, Google Sheets, or any spreadsheet app.</div>
         <button onClick={()=>{exportToCSV(client,visibleHabits);setExportDone(true);setTimeout(()=>setExportDone(false),3000)}}
           style={{background:exportDone?GREEN:NAVY,border:'none',borderRadius:10,padding:'12px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer',transition:'background .2s'}}>
           {exportDone?'✓ Downloaded':'Download CSV'}
         </button>
-      </Card>
+      </AccordionCard>
 
-      {/* Version */}
-      <div style={{textAlign:'center',paddingBottom:8}}>
+      <AccordionCard id="delete" title="Delete Account" icon="⚠️" subtitle="Send a data deletion request" danger={true}>
+        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
+          This sends a data deletion request to your coach at <strong>evolve.human01@gmail.com</strong>. Your coach will manually remove your data and confirm via email. This cannot be undone.
+        </div>
+        {deleteConfirm&&<div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'12px 14px',marginBottom:14,fontSize:15,color:RED,fontWeight:600}}>Are you sure? This will open your email app to send a deletion request to your coach.</div>}
+        <button onClick={handleDelete} style={{background:deleteConfirm?RED:CREAM,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.2)'}`,borderRadius:10,padding:'11px 22px',color:deleteConfirm?WHITE:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
+          {deleteConfirm?'Yes, Send Deletion Request':'Request Account Deletion'}
+        </button>
+      </AccordionCard>
+
+      <div style={{textAlign:'center',paddingBottom:8,marginTop:8}}>
         <div style={{...T.tiny,fontSize:12}}>Evolve:Wellbeing {APP_VERSION}</div>
       </div>
     </div>
   )
 }
+
 
 // ── MAIN APP ──────────────────────────────────────────────
 export default function App() {
