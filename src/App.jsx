@@ -1780,7 +1780,7 @@ export default function App() {
                 )}
                 {(!phase || phase.expired) && (
                   <div style={{background:CREAM,borderRadius:10,padding:'12px 14px',marginBottom:12}}>
-                    <div style={{fontSize:14,color:'#718096',lineHeight:1.5}}>{cycleDay1 ? 'It's been more than 35 days since your last cycle start. Tap Day 1 when your next cycle begins.' : 'Tap Day 1 below when your period starts to track your cycle phase.'}</div>
+                    <div style={{fontSize:14,color:'#718096',lineHeight:1.5}}>{cycleDay1 ? 'It has been more than 35 days since your last cycle start. Tap Day 1 when your next cycle begins.' : 'Tap Day 1 below when your period starts to track your cycle phase.'}</div>
                   </div>
                 )}
 
