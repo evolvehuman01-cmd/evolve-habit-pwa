@@ -117,7 +117,26 @@ const METRICS = [
   { id:'digestion', label:'Digestion',icon:'🫁', invert:false, note:'1 = very poor · 10 = excellent' },
 ]
 
-const CYCLE_OPTS = ['Day 1–5 — Menstruation','Day 6–13 — Follicular','Day 14 — Ovulation','Day 15–20 — Early Luteal','Day 21–28 — Late Luteal','Perimenopause — irregular','Not applicable today']
+// ── CYCLE PHASE CALCULATOR ───────────────────────────────
+const CYCLE_PHASES = [
+  { label: 'Menstruation',  days: [1,5],   icon: '🔴', desc: 'Days 1–5' },
+  { label: 'Follicular',    days: [6,13],  icon: '🌱', desc: 'Days 6–13' },
+  { label: 'Ovulation',     days: [14,14], icon: '⭐', desc: 'Day 14' },
+  { label: 'Early Luteal',  days: [15,20], icon: '🌕', desc: 'Days 15–20' },
+  { label: 'Late Luteal',   days: [21,28], icon: '🌘', desc: 'Days 21–28' },
+]
+
+function getCyclePhase(cycleDay1Str) {
+  if (!cycleDay1Str) return null
+  const start = new Date(cycleDay1Str)
+  start.setHours(0,0,0,0)
+  const today = new Date()
+  today.setHours(0,0,0,0)
+  const dayNum = Math.floor((today - start) / 86400000) + 1
+  if (dayNum > 35) return { label: 'unknown', dayNum, expired: true }
+  const phase = CYCLE_PHASES.find(p => dayNum >= p.days[0] && dayNum <= p.days[1])
+  return phase ? { ...phase, dayNum, expired: false } : { label: 'Late Luteal', dayNum, expired: false, icon: '🌘', desc: 'Day ' + dayNum }
+}
 
 const DAILY_PROMPTS = [
   "What made today's habits easier or harder than usual?",
@@ -199,7 +218,7 @@ const isWeeklyDue  = () => {
   if (LS.get(`checkin_weekly_done_${wk}`)) return false
   return (dow===0 && h>=18) || (dow===1 && h<12)
 }
-const isMonthlyDue = (client) => { const mk=getMonthKey(); if(LS.get(`checkin_monthly_done_${mk}`)) return false; const sd=Math.min(client?.startDay||1,28),td=new Date().getDate(); return td>=sd&&td<=sd+3 }
+const isMonthlyDue = (client) => { const mk=getMonthKey(); if(LS.get(`checkin_monthly_done_${mk}`)) return false; if(client?.joinedAt&&(new Date()-new Date(client.joinedAt))<28*86400000) return false; const sd=Math.min(client?.startDay||1,28),td=new Date().getDate(); return td>=sd&&td<=sd+3 }
 
 // ── STREAK HELPERS ────────────────────────────────────────
 const getStreaks = () => ({ ls:LS.get('streak_log',{count:0,lastDate:null,best:0}), ts:LS.get('streak_target',{count:0,lastDate:null,best:0}) })
@@ -1327,6 +1346,7 @@ export default function App() {
   const [clearedHabits,   setClearedHabits]   = useState({}) // habits the user explicitly cleared — skip prefill on next tap
   const [metricValues,    setMetricValues]    = useState({stressRPE:5,mood:6,energy:6,digestion:7})
   const [cyclePhase,      setCyclePhase]      = useState('')
+  const [cycleDay1,       setCycleDay1]       = useState(null) // ISO date string of last Day 1
   const [reflection,      setReflection]      = useState('')
   const [showReflection,  setShowReflection]  = useState(false)
   const [sendStatus,      setSendStatus]      = useState('idle')
@@ -1447,12 +1467,17 @@ export default function App() {
     }, 300000) // 5 minutes
     return ()=>clearInterval(interval)
   },[client])
-  useEffect(()=>{const s=LS.get(`log_${todayKey}`);if(s){setHabitValues(s.habits||{});setMetricValues(s.metrics||{stressRPE:5,mood:6,energy:6,digestion:7});setCyclePhase(s.cyclePhase||'');setReflection(s.reflection||'')}},[todayKey])
+  useEffect(()=>{
+    const s=LS.get(`log_${todayKey}`);
+    if(s){setHabitValues(s.habits||{});setMetricValues(s.metrics||{stressRPE:5,mood:6,energy:6,digestion:7});setCyclePhase(s.cyclePhase||'');setReflection(s.reflection||'')}
+    const d1=LS.get('evolve_cycle_day1');if(d1)setCycleDay1(d1)
+  },[todayKey])
   useEffect(()=>{if(!client)return;LS.set(`log_${todayKey}`,{habits:habitValues,metrics:metricValues,cyclePhase,reflection})},[habitValues,metricValues,cyclePhase,reflection,client,todayKey])
 
   // ── Config ─────────────────────────────────────────────
   useEffect(()=>{const cfg=LS.get('evolve_config');if(cfg){if(cfg.activeHabits)setActiveHabits(cfg.activeHabits);if(cfg.showCycle!==undefined)setShowCycle(cfg.showCycle)}},[])
   useEffect(()=>{LS.set('evolve_config',{activeHabits,showCycle})},[activeHabits,showCycle])
+  useEffect(()=>{if(cycleDay1)LS.set('evolve_cycle_day1',cycleDay1)},[cycleDay1])
 
   // ── Install btn ────────────────────────────────────────
   useEffect(()=>{const btn=document.getElementById('pwa-install-btn');if(!btn||!deferredPrompt)return;const h=async()=>{deferredPrompt.prompt();const{outcome}=await deferredPrompt.userChoice;if(outcome==='accepted'){setShowInstall(false);setDeferredPrompt(null)}};btn.addEventListener('click',h);return()=>btn.removeEventListener('click',h)},[deferredPrompt,showInstall])
@@ -1505,7 +1530,7 @@ export default function App() {
       clientEmail:client?.email||'',
       habits:habitValues,
       metrics:metricValues,
-      cyclePhase:showCycle?cyclePhase:'',
+      cyclePhase:showCycle?(()=>{const p=getCyclePhase(cycleDay1);return p&&!p.expired?p.label:cyclePhase})():'',
       reflectionPrompt:DAILY_PROMPTS[promptIdx%DAILY_PROMPTS.length],
       reflection,
       habitsCompleted:completedHabits.length,
@@ -1649,7 +1674,8 @@ export default function App() {
                 return (
                   <div key={h.id} style={{background:cbBg,border:`2px solid ${cbCol}`,borderRadius:14,padding:16,transition:'all .15s',boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}}>
                     <div style={{fontSize:26,marginBottom:8}}>{h.icon}</div>
-                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:10}}>{h.label}</div>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:4}}>{h.label}</div>
+                    <div style={{fontSize:13,color:'#718096',marginBottom:10}}>{h.desc}</div>
                     <div style={{display:'flex',gap:8}}>
                       <button
                         onClick={()=>setHabitValues(p=>({...p,[h.id]:isYes?'':1}))}
@@ -1724,15 +1750,55 @@ export default function App() {
             </Card>
           ))}
 
-          {/* Cycle phase */}
-          {showCycle&&(<>
-            <SL>Cycle Phase</SL>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:4}}>
-              {CYCLE_OPTS.map(opt=>(
-                <button key={opt} onClick={()=>setCyclePhase(opt)} style={{background:cyclePhase===opt?ORANGE:WHITE,border:`1.5px solid ${cyclePhase===opt?ORANGE:'rgba(28,43,58,0.15)'}`,borderRadius:10,padding:'12px 13px',color:cyclePhase===opt?WHITE:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:15,fontWeight:cyclePhase===opt?600:400,cursor:'pointer',textAlign:'left',lineHeight:1.4}}>{opt}</button>
-              ))}
-            </div>
-          </>)}
+          {/* Cycle tracking card */}
+          {showCycle&&(()=>{
+            const phase = getCyclePhase(cycleDay1)
+            const isDay1Today = cycleDay1 === todayKey
+            const handleDay1 = () => {
+              if (isDay1Today) {
+                // untap — revert to previous day1 or null
+                const prev = LS.get('evolve_cycle_day1_prev')
+                setCycleDay1(prev || null)
+              } else {
+                LS.set('evolve_cycle_day1_prev', cycleDay1)
+                setCycleDay1(todayKey)
+              }
+            }
+            return (
+              <div style={{background:WHITE,border:`2px solid rgba(28,43,58,0.12)`,borderRadius:14,padding:16,marginBottom:8,boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}}>
+                <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:12}}>🌙 Cycle Tracking</div>
+
+                {/* Phase display */}
+                {phase && !phase.expired && (
+                  <div style={{background:CREAM,borderRadius:10,padding:'12px 14px',marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
+                    <span style={{fontSize:28}}>{phase.icon}</span>
+                    <div>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:20,color:NAVY}}>{phase.label}</div>
+                      <div style={{fontSize:13,color:'#718096',marginTop:2}}>{phase.desc} · Day {phase.dayNum} of cycle</div>
+                    </div>
+                  </div>
+                )}
+                {(!phase || phase.expired) && (
+                  <div style={{background:CREAM,borderRadius:10,padding:'12px 14px',marginBottom:12}}>
+                    <div style={{fontSize:14,color:'#718096',lineHeight:1.5}}>{cycleDay1 ? 'It's been more than 35 days since your last cycle start. Tap Day 1 when your next cycle begins.' : 'Tap Day 1 below when your period starts to track your cycle phase.'}</div>
+                  </div>
+                )}
+
+                {/* Day 1 checkbox — always present */}
+                <button
+                  onClick={handleDay1}
+                  style={{width:'100%',display:'flex',alignItems:'center',gap:12,background:isDay1Today?`${ORANGE}15`:CREAM,border:`2px solid ${isDay1Today?ORANGE:'rgba(28,43,58,0.15)'}`,borderRadius:10,padding:'12px 14px',cursor:'pointer',textAlign:'left'}}>
+                  <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${isDay1Today?ORANGE:'rgba(28,43,58,0.3)'}`,background:isDay1Today?ORANGE:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    {isDay1Today&&<span style={{color:WHITE,fontSize:14,fontWeight:700}}>✓</span>}
+                  </div>
+                  <div>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>Day 1 — Period started today</div>
+                    <div style={{fontSize:12,color:'#a0aec0',marginTop:2}}>Resets your cycle phase tracking</div>
+                  </div>
+                </button>
+              </div>
+            )
+          })()}
 
           {/* Reflection — collapsible */}
           <button onClick={()=>setShowReflection(v=>!v)} style={{width:'100%',background:WHITE,border:'1.5px solid rgba(28,43,58,0.12)',borderRadius:12,padding:'14px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',marginTop:8,marginBottom:showReflection?0:8}}>
