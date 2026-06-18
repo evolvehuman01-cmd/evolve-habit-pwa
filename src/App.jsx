@@ -4,9 +4,10 @@ import {
   CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ReferenceLine, ComposedChart, Area
 } from 'recharts'
+import { initiateGoogleFitAuth, checkFitConnection, fetchFitData, disconnectFit } from './useHealthData.js'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 import CoachDashboard from './CoachDashboard.jsx'
-import { LearnHub, HowToGuidePage, ScienceTopicPage, SleepHygieneGuidePage, StepsGuidePage, HydrationGuidePage } from './LearnScreen.jsx'
+import { LearnHub, HowToGuidePage, ScienceTopicPage } from './LearnScreen.jsx'
 
 // ── ERROR BOUNDARY ────────────────────────────────────────
 // Catches runtime errors in any child component and shows a
@@ -73,6 +74,7 @@ const DEFAULT_TARGETS = {
   sleep: 7.5, steps: 8000, hydration: 2.5,
   meals: 3, mindfulness: 10, mobility: 10,
   stress: 5, mood: 6, energy: 6,
+  workout: 1,
 }
 
 // ── HABITS — targets applied dynamically from coach ───────
@@ -83,6 +85,7 @@ const ALL_HABITS = [
   { id:'meals',       label:'Meal Structure',icon:'🥗', desc:'Planned, structured meals today',   unit:'meals', min:0, max:6,     step:1,   autoFill:null },
   { id:'mindfulness', label:'Mindfulness',   icon:'🧠', desc:'Mindfulness or breathwork today',  unit:'min',   min:0, max:60,    step:1,   autoFill:null },
   { id:'mobility',    label:'Mobility',      icon:'🧘', desc:'Dedicated mobility or flexibility',unit:'min',   min:0, max:120,   step:5,   autoFill:null },
+  { id:'workout',     label:'Workout',       icon:'💪', desc:'Did you work out today?',           unit:'',      min:0, max:1,     step:1,   autoFill:null,  type:'checkbox' },
 ]
 
 // Merge static habit definitions with dynamic targets from coach
@@ -96,13 +99,15 @@ function buildHabitsWithTargets(targets) {
             h.id === 'hydration' ? t.hydration :
             h.id === 'meals' ? t.meals        :
             h.id === 'mindfulness' ? t.mindfulness :
-            h.id === 'mobility' ? t.mobility  : t[h.id],
+            h.id === 'mobility' ? t.mobility  :
+            h.id === 'workout' ? 1            : t[h.id],
     amber:  h.id === 'steps' ? t.steps * 0.6      :
             h.id === 'sleep' ? t.sleep - 1          :
             h.id === 'hydration' ? t.hydration * 0.7 :
             h.id === 'meals' ? Math.max(1, t.meals - 1) :
             h.id === 'mindfulness' ? t.mindfulness * 0.5 :
-            h.id === 'mobility' ? t.mobility * 0.5   : t[h.id] * 0.8,
+            h.id === 'mobility' ? t.mobility * 0.5   :
+            h.id === 'workout' ? 0                   : t[h.id] * 0.8,
   }))
 }
 
@@ -195,20 +200,7 @@ const isWeeklyDue  = () => {
   if (LS.get(`checkin_weekly_done_${wk}`)) return false
   return (dow===0 && h>=18) || (dow===1 && h<12)
 }
-// Monthly check-in: due in a 4-day window around the client's join-date anniversary,
-// but only from their SECOND month onwards — never on the join day itself.
-// e.g. joined 13th June -> first monthly check-in window opens ~13th July.
-const isMonthlyDue = (client) => {
-  const mk=getMonthKey(); if(LS.get(`checkin_monthly_done_${mk}`)) return false
-  if (!client?.joinedAt) return false
-  const joined = new Date(client.joinedAt)
-  const now    = new Date()
-  // Months elapsed (calendar months, ignoring day-of-month)
-  const monthsElapsed = (now.getFullYear()-joined.getFullYear())*12 + (now.getMonth()-joined.getMonth())
-  if (monthsElapsed < 1) return false // hasn't reached first anniversary yet
-  const sd=Math.min(client?.startDay||joined.getDate(),28), td=now.getDate()
-  return td>=sd&&td<=sd+3
-}
+const isMonthlyDue = (client) => { const mk=getMonthKey(); if(LS.get(`checkin_monthly_done_${mk}`)) return false; const sd=Math.min(client?.startDay||1,28),td=new Date().getDate(); return td>=sd&&td<=sd+3 }
 
 // ── STREAK HELPERS ────────────────────────────────────────
 const getStreaks = () => ({ ls:LS.get('streak_log',{count:0,lastDate:null,best:0}), ts:LS.get('streak_target',{count:0,lastDate:null,best:0}) })
@@ -263,28 +255,6 @@ const Card = ({children,style={}}) => (
 const SL = ({children}) => (
   <div style={{...T.super,borderBottom:'1.5px solid rgba(28,43,58,0.1)',paddingBottom:9,marginTop:24,marginBottom:14}}>{children}</div>
 )
-// ── COLLAPSIBLE SECTION — used on Settings screen for dropdown cards ──
-function CollapsibleSection({ title, subtitle, icon, defaultOpen=false, badge, children }) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div style={{background:WHITE,borderRadius:14,marginBottom:10,border:'1px solid rgba(28,43,58,0.1)',boxShadow:'0 1px 4px rgba(28,43,58,0.07)',overflow:'hidden'}}>
-      <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',background:'transparent',border:'none',padding:'16px 18px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',textAlign:'left'}}>
-        {icon&&<span style={{fontSize:22,flexShrink:0}}>{icon}</span>}
-        <div style={{flex:1}}>
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:18,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>{title}</div>
-          {subtitle&&<div style={{...T.small,fontSize:13,marginTop:2}}>{subtitle}</div>}
-        </div>
-        {badge}
-        <span style={{fontSize:18,color:'#a0aec0',transform:open?'rotate(180deg)':'none',transition:'transform .15s',flexShrink:0}}>▾</span>
-      </button>
-      {open&&(
-        <div style={{padding:'0 18px 18px'}}>
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
 const CustomTooltip = ({active,payload,label}) => {
   if (!active||!payload?.length) return null
   return <div style={{background:NAVY,border:`1px solid ${ORANGE}`,borderRadius:10,padding:'10px 14px',fontSize:14}}><div style={{color:ORANGE,fontWeight:700,marginBottom:6}}>{label}</div>{payload.map((p,i)=><div key={i} style={{color:WHITE,marginBottom:2}}>{p.name}: <strong>{p.value}</strong></div>)}</div>
@@ -829,61 +799,41 @@ const PROGRAMME_GOALS = [
 ]
 
 function SetupScreen({ onComplete }) {
-  const params   = new URLSearchParams(window.location.search)
-  const urlName  = params.get('name')     || ''
-  const urlEmail = params.get('email')    || ''
-  const urlId    = params.get('clientId') || ''
-
-  const [step,     setStep]    = useState(0) // 0=details, 1=goal & targets
-  const [name,     setName]    = useState(urlName)
-  const [email,    setEmail]   = useState(urlEmail)
+  const [step,     setStep]    = useState(0) // 0=details, 1=goal, 2=confirm
+  const [name,     setName]    = useState('')
+  const [email,    setEmail]   = useState('')
+  const [goal,     setGoal]    = useState('')
   const [err,      setErr]     = useState('')
-
-  // Step 1 fetch state
-  const [loadStatus, setLoadStatus] = useState('idle') // 'idle'|'loading'|'ready'|'pending'|'error'
-  const [goal,        setGoal]      = useState('')
-  const [fetchedTargets, setFetchedTargets] = useState(null)
 
   const inp = {width:'100%',background:CREAM,border:'1.5px solid rgba(28,43,58,0.2)',borderRadius:11,padding:'15px 16px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:17,outline:'none',boxSizing:'border-box'}
 
   const handleStep0 = () => {
     if (!name.trim())                       { setErr('Please enter your name'); return }
     if (!email.trim()||!email.includes('@')){ setErr('Please enter a valid email'); return }
-    if (!urlId) { setErr('We couldn\u2019t find your client ID in this link. Please use the link from your coach\u2019s welcome email.'); return }
     setErr(''); setStep(1)
   }
-
-  // Fetch goal + targets + active status once Step 2 is reached
-  useEffect(()=>{
-    if (step !== 1 || !urlId) return
-    if (APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') { setLoadStatus('error'); return }
-    setLoadStatus('loading')
-    fetch(`${APPS_SCRIPT_URL}?action=getTargets&clientId=${encodeURIComponent(urlId)}`)
-      .then(r => r.json())
-      .then(json => {
-        if (!json.success) { setLoadStatus('error'); return }
-        if (!json.active) { setLoadStatus('pending'); return }
-        setGoal(json.goal || '')
-        setFetchedTargets(json.targets || null)
-        setLoadStatus('ready')
-      })
-      .catch(() => setLoadStatus('error'))
-  },[step])
-
+  const handleStep1 = () => {
+    if (!goal) { setErr('Please select your primary goal'); return }
+    setErr(''); setStep(2)
+  }
   const handleComplete = () => {
+    // Generate a stable UUID — this is the permanent identifier.
+    // Name-derived IDs break if the client's name is ever corrected.
+    const clientId = crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     onComplete({
       name:      name.trim(),
       email:     email.trim(),
       goal,
-      clientId:  urlId,
+      clientId,
       startDay:  Math.min(new Date().getDate(), 28),
       joinedAt:  new Date().toISOString(),
     })
   }
 
-  const steps = ['Your Details','Your Plan']
+  const steps = ['Your Details','Your Goal','Let\'s Go']
   const goalObj = PROGRAMME_GOALS.find(g=>g.id===goal)
-  const t = { ...DEFAULT_TARGETS, ...(fetchedTargets || {}) }
 
   return(
     <div style={{minHeight:'100vh',background:CREAM,display:'flex',flexDirection:'column'}}>
@@ -906,7 +856,7 @@ function SetupScreen({ onComplete }) {
           {/* Step 0 — Details */}
           {step===0&&(
             <Card style={{padding:28}}>
-              <div style={{...T.super,marginBottom:6}}>Step 1 of 2</div>
+              <div style={{...T.super,marginBottom:6}}>Step 1 of 3</div>
               <div style={{...T.h2,fontSize:28,marginBottom:8}}>Your Details</div>
               <div style={{...T.body,marginBottom:24,color:'#4a5568',fontSize:16}}>Takes 30 seconds. Saved to this device only.</div>
               <label style={{...T.label,display:'block',marginBottom:9}}>Your Name <span style={{color:ORANGE}}>*</span></label>
@@ -918,72 +868,52 @@ function SetupScreen({ onComplete }) {
             </Card>
           )}
 
-          {/* Step 1 — Goal & Targets */}
+          {/* Step 1 — Goal */}
           {step===1&&(
-            <Card style={{padding:28}}>
-              <div style={{...T.super,marginBottom:6}}>Step 2 of 2</div>
-
-              {loadStatus==='loading'&&(
-                <>
-                  <div style={{...T.h2,fontSize:28,marginBottom:8}}>Loading Your Plan…</div>
-                  <div style={{...T.body,color:'#4a5568',fontSize:16}}>Fetching your goal and targets from your coach.</div>
-                </>
-              )}
-
-              {loadStatus==='error'&&(
-                <>
-                  <div style={{...T.h2,fontSize:28,marginBottom:8}}>Something Went Wrong</div>
-                  <div style={{...T.body,marginBottom:20,color:'#4a5568',fontSize:16}}>We couldn't load your plan. Check your connection and try again, or contact your coach if this keeps happening.</div>
-                  <button onClick={()=>setStep(1)} style={{width:'100%',background:ORANGE,border:'none',borderRadius:12,padding:'16px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:19,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>Try Again</button>
-                </>
-              )}
-
-              {loadStatus==='pending'&&(
-                <>
-                  <div style={{...T.h2,fontSize:28,marginBottom:8}}>Almost There</div>
-                  <div style={{...T.body,marginBottom:20,color:'#4a5568',fontSize:16}}>Your coach is putting the finishing touches on your plan. You'll get an email as soon as it's ready — check back then.</div>
-                </>
-              )}
-
-              {loadStatus==='ready'&&(
-                <>
-                  <div style={{...T.h2,fontSize:28,marginBottom:20}}>Your Plan Is Ready</div>
-
-                  {goalObj&&(
-                    <div style={{display:'flex',alignItems:'center',gap:14,background:`${ORANGE}12`,border:`2px solid ${ORANGE}`,borderRadius:13,padding:'16px 18px',marginBottom:18}}>
-                      <span style={{fontSize:28,flexShrink:0}}>{goalObj.icon}</span>
-                      <div>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:18,color:ORANGE,textTransform:'uppercase',letterSpacing:'0.04em'}}>{goalObj.label}</div>
-                        <div style={{...T.tiny,fontSize:13,marginTop:2}}>{goalObj.desc}</div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{background:CREAM,borderRadius:12,padding:18,marginBottom:20}}>
-                    <div style={{...T.super,marginBottom:10,fontSize:12}}>Your Targets</div>
-                    {[
-                      {label:'Sleep',       value:`${t.sleep}h`},
-                      {label:'Steps',       value:Number(t.steps).toLocaleString()},
-                      {label:'Hydration',   value:`${t.hydration}L`},
-                      {label:'Meals',       value:`${t.meals} meals`},
-                      {label:'Mindfulness', value:`${t.mindfulness}min`},
-                      {label:'Mobility',    value:`${t.mobility}min`},
-                    ].map((row,i)=>(
-                      <div key={row.label} style={{display:'flex',justifyContent:'space-between',marginBottom:i<5?10:0,paddingBottom:i<5?10:0,borderBottom:i<5?'1px solid rgba(28,43,58,0.08)':'none'}}>
-                        <span style={{...T.small,fontWeight:600}}>{row.label}</span>
-                        <span style={{...T.small,color:NAVY,fontWeight:600}}>{row.value}</span>
-                      </div>
-                    ))}
+            <div>
+              <div style={{...T.super,marginBottom:6,paddingLeft:4}}>Step 2 of 3</div>
+              <div style={{...T.h2,fontSize:28,marginBottom:6,paddingLeft:4}}>Your Primary Goal</div>
+              <div style={{...T.small,marginBottom:18,paddingLeft:4}}>This helps your coach tailor your programme. You can update it any time.</div>
+              {PROGRAMME_GOALS.map(g=>(
+                <button key={g.id} onClick={()=>{setGoal(g.id);setErr('')}} style={{display:'flex',alignItems:'center',gap:14,width:'100%',background:goal===g.id?`${ORANGE}12`:WHITE,border:`2px solid ${goal===g.id?ORANGE:'rgba(28,43,58,0.12)'}`,borderRadius:13,padding:'16px 18px',marginBottom:9,cursor:'pointer',textAlign:'left',transition:'all .12s'}}>
+                  <span style={{fontSize:28,flexShrink:0}}>{g.icon}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:18,color:goal===g.id?ORANGE:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>{g.label}</div>
+                    <div style={{...T.tiny,fontSize:13,marginTop:2}}>{g.desc}</div>
                   </div>
+                  {goal===g.id&&<div style={{width:22,height:22,borderRadius:'50%',background:ORANGE,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><span style={{color:WHITE,fontSize:12,fontWeight:900}}>✓</span></div>}
+                </button>
+              ))}
+              {err&&<div style={{color:RED,fontSize:15,marginTop:4,paddingLeft:4}}>{err}</div>}
+              <div style={{display:'flex',gap:10,marginTop:8}}>
+                <button onClick={()=>setStep(0)} style={{flex:1,background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:12,padding:'14px',color:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',cursor:'pointer'}}>← Back</button>
+                <button onClick={handleStep1} style={{flex:2,background:goal?ORANGE:'rgba(28,43,58,0.15)',border:'none',borderRadius:12,padding:'14px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:16,textTransform:'uppercase',cursor:goal?'pointer':'not-allowed'}}>Next →</button>
+              </div>
+            </div>
+          )}
 
-                  <div style={{...T.tiny,marginBottom:22,lineHeight:1.7,textAlign:'center'}}>Your information is kept private and used only by your Evolve:Wellbeing coach.</div>
-                  <button onClick={handleComplete} style={{width:'100%',background:ORANGE,border:'none',borderRadius:12,padding:'17px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:20,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>Start Tracking</button>
-                </>
-              )}
-
-              {loadStatus!=='loading'&&(
-                <button onClick={()=>setStep(0)} style={{width:'100%',marginTop:10,background:'transparent',border:'none',color:'#a0aec0',fontFamily:"'Barlow',sans-serif",fontSize:15,cursor:'pointer',padding:'6px'}}>← Back</button>
-              )}
+          {/* Step 2 — Confirm */}
+          {step===2&&(
+            <Card style={{padding:28}}>
+              <div style={{...T.super,marginBottom:6}}>Step 3 of 3</div>
+              <div style={{...T.h2,fontSize:28,marginBottom:20}}>Ready to Go</div>
+              <div style={{background:CREAM,borderRadius:12,padding:18,marginBottom:20}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:10,paddingBottom:10,borderBottom:'1px solid rgba(28,43,58,0.08)'}}>
+                  <span style={{...T.small,fontWeight:600}}>Name</span>
+                  <span style={{...T.small,color:NAVY,fontWeight:600}}>{name}</span>
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:10,paddingBottom:10,borderBottom:'1px solid rgba(28,43,58,0.08)'}}>
+                  <span style={{...T.small,fontWeight:600}}>Email</span>
+                  <span style={{...T.small,color:NAVY,fontWeight:600}}>{email}</span>
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{...T.small,fontWeight:600}}>Goal</span>
+                  <span style={{...T.small,color:NAVY,fontWeight:600}}>{goalObj?.icon} {goalObj?.label}</span>
+                </div>
+              </div>
+              <div style={{...T.tiny,marginBottom:22,lineHeight:1.7,textAlign:'center'}}>Your information is kept private and used only by your Evolve:Wellbeing coach.</div>
+              <button onClick={handleComplete} style={{width:'100%',background:ORANGE,border:'none',borderRadius:12,padding:'17px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:20,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>Start Tracking</button>
+              <button onClick={()=>setStep(1)} style={{width:'100%',marginTop:10,background:'transparent',border:'none',color:'#a0aec0',fontFamily:"'Barlow',sans-serif",fontSize:15,cursor:'pointer',padding:'6px'}}>Go Back</button>
             </Card>
           )}
 
@@ -1031,7 +961,7 @@ function DayDetailModal({ date, visibleHabits, onClose }) {
                       <div style={{fontSize:20,marginBottom:4}}>{h.icon}</div>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:2}}>{h.label}</div>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:24,color:filled?col:'#cbd5e0'}}>
-                        {filled?val:'—'}<span style={{fontSize:12,fontWeight:400,marginLeft:3}}>{filled?h.unit:''}</span>
+                        {filled?(h.type==='checkbox'?(val===1?'Yes':'No'):val):'—'}<span style={{fontSize:12,fontWeight:400,marginLeft:3}}>{filled&&h.type!=='checkbox'?h.unit:''}</span>
                       </div>
                     </div>
                   )
@@ -1259,7 +1189,7 @@ function OneSignalToggle() {
   )
 }
 
-function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onOpenLearn }) {
+function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit, onOpenLearn }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const handleDelete = () => {
@@ -1276,8 +1206,9 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
       <div style={{...T.super,marginBottom:4}}>Account</div>
       <div style={{...T.h2,fontSize:30,marginBottom:22}}>Settings</div>
 
-      {/* Your Profile */}
-      <CollapsibleSection title="Your Profile" icon="👤" defaultOpen>
+      {/* Profile */}
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Your Profile</div>
         <div style={{fontSize:19,fontWeight:700,color:NAVY,marginBottom:4}}>{client.name}</div>
         <div style={{fontSize:16,color:'#718096',marginBottom:4}}>{client.email}</div>
         <div style={{...T.tiny,marginBottom:18,fontSize:13}}>Member since {client.joinedAt?new Date(client.joinedAt).toLocaleDateString('en-GB',''):'Unknown'}</div>
@@ -1286,10 +1217,45 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
           Sign Out of This Device
         </button>
         <div style={{...T.tiny,marginTop:10,lineHeight:1.6,fontSize:13}}>Signing out clears your data from this device only. Your logs remain with your coach.</div>
-      </CollapsibleSection>
+      </Card>
 
-      {/* Your Targets */}
-      <CollapsibleSection title="Your Targets" icon="🎯">
+      {/* Google Fit */}
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Health Integration</div>
+        {fitStatus === 'checking' ? (
+          <div style={{height:44,background:'rgba(28,43,58,0.06)',borderRadius:10,display:'flex',alignItems:'center',paddingLeft:14}}>
+            <div style={{...T.tiny,fontSize:14}}>Checking Google Fit status...</div>
+          </div>
+        ) : fitToken ? (
+          <>
+            <div style={{background:GREEN_LIGHT,border:`1px solid ${GREEN}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontSize:18}}>✓</span>
+              <div style={{fontWeight:600,fontSize:16,color:GREEN}}>Google Fit Connected</div>
+            </div>
+            <div style={{...T.small,marginBottom:14}}>Steps and sleep auto-fill from your health data daily.</div>
+            <button onClick={onDisconnectFit} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.2)',borderRadius:10,padding:'11px 22px',color:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>Disconnect</button>
+          </>
+        ) : fitStatus === 'connecting' ? (
+          <div style={{background:`${ORANGE}12`,border:`1px solid ${ORANGE}`,borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:18}}>⏳</span>
+            <div style={{fontWeight:600,fontSize:15,color:ORANGE}}>Opening Google authorisation — complete it in the new tab then return here.</div>
+          </div>
+        ) : (
+          <>
+            {fitStatus === 'error' && (
+              <div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'10px 14px',marginBottom:12,fontSize:14,color:RED}}>
+                Could not connect to Google Fit. Check that your coach has configured the integration, then try again.
+              </div>
+            )}
+            <div style={{fontWeight:600,fontSize:16,color:'#718096',marginBottom:6}}>Google Fit not connected</div>
+            <div style={{...T.small,marginBottom:14}}>Connect to auto-fill steps and sleep each day. Requires your coach to have configured the server integration.</div>
+            <button onClick={onConnectFit} style={{background:ORANGE,border:'none',borderRadius:10,padding:'11px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>Connect Google Fit</button>
+          </>
+        )}
+      </Card>
+
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Your Targets</div>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
           <div style={{width:10,height:10,borderRadius:'50%',background:targetSource==='coach'?GREEN:AMBER,flexShrink:0}}/>
           <div style={{fontWeight:600,fontSize:16,color:NAVY}}>
@@ -1320,41 +1286,30 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
         {clientTargets.notes&&(
           <div style={{marginTop:12,background:`${ORANGE}10`,borderLeft:`3px solid ${ORANGE}`,borderRadius:8,padding:'10px 12px',fontSize:14,color:'#4a5568',lineHeight:1.6}}>{clientTargets.notes}</div>
         )}
-      </CollapsibleSection>
-
-      {/* Your Data */}
-      <CollapsibleSection title="Your Data" icon="📤" subtitle="Export your habit logs as a CSV">
-        <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Export Your Logs</div>
-        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
-          Download a CSV file of your last 90 days of habit data. Opens in Excel, Google Sheets, or any spreadsheet app.
-        </div>
-        <button onClick={()=>{exportToCSV(client,visibleHabits);setExportDone(true);setTimeout(()=>setExportDone(false),3000)}}
-          style={{background:exportDone?GREEN:NAVY,border:'none',borderRadius:10,padding:'12px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer',transition:'background .2s'}}>
-          {exportDone?'✓ Downloaded':'Download CSV'}
-        </button>
-      </CollapsibleSection>
-
-      {/* Notifications */}
-      <CollapsibleSection title="Notifications" icon="🔔">
+      </Card>
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Notifications</div>
         <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Daily Reminder — 8pm</div>
         <div style={{...T.small,marginBottom:18,lineHeight:1.6}}>
           You receive a push notification at 8pm every evening and a check-in reminder every Sunday at 6pm.
         </div>
         <OneSignalToggle />
-      </CollapsibleSection>
+      </Card>
 
-      {/* Learn — navigates away, not a collapsible card */}
-      <button onClick={onOpenLearn} style={{width:'100%',background:WHITE,borderRadius:14,marginBottom:10,border:'1px solid rgba(28,43,58,0.1)',boxShadow:'0 1px 4px rgba(28,43,58,0.07)',padding:'16px 18px',display:'flex',alignItems:'center',gap:12,cursor:'pointer',textAlign:'left'}}>
-        <span style={{fontSize:22,flexShrink:0}}>📘</span>
-        <div style={{flex:1}}>
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:18,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>Learn</div>
-          <div style={{...T.small,fontSize:13,marginTop:2}}>How-to guide and the science behind your targets</div>
+      <Card style={{padding:18,cursor:'pointer'}} onClick={onOpenLearn}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <span style={{fontSize:26}}>📘</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:17,color:NAVY}}>Learn</div>
+            <div style={{...T.small,fontSize:14}}>How-to guide and the science behind your targets</div>
+          </div>
+          <span style={{fontSize:18,color:'#cbd5e0'}}>›</span>
         </div>
-        <span style={{fontSize:18,color:'#cbd5e0'}}>›</span>
-      </button>
+      </Card>
 
-      {/* Delete Account */}
-      <CollapsibleSection title="Delete Account" icon="⚠️">
+      {/* Delete account */}
+      <Card style={{padding:22,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.1)'}`}}>
+        <div style={{...T.super,marginBottom:10,color:RED}}>Delete Account</div>
         <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
           This sends a data deletion request to your coach at <strong>evolve.human01@gmail.com</strong>. Your coach will manually remove your data and confirm via email. This cannot be undone.
         </div>
@@ -1366,10 +1321,23 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
         <button onClick={handleDelete} style={{background:deleteConfirm?RED:CREAM,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.2)'}`,borderRadius:10,padding:'11px 22px',color:deleteConfirm?WHITE:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
           {deleteConfirm?'Yes, Send Deletion Request':'Request Account Deletion'}
         </button>
-      </CollapsibleSection>
+      </Card>
+
+      {/* Data Export */}
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Your Data</div>
+        <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Export Your Logs</div>
+        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
+          Download a CSV file of your last 90 days of habit data. Opens in Excel, Google Sheets, or any spreadsheet app.
+        </div>
+        <button onClick={()=>{exportToCSV(client,visibleHabits);setExportDone(true);setTimeout(()=>setExportDone(false),3000)}}
+          style={{background:exportDone?GREEN:NAVY,border:'none',borderRadius:10,padding:'12px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer',transition:'background .2s'}}>
+          {exportDone?'✓ Downloaded':'Download CSV'}
+        </button>
+      </Card>
 
       {/* Version */}
-      <div style={{textAlign:'center',paddingTop:8,paddingBottom:8}}>
+      <div style={{textAlign:'center',paddingBottom:8}}>
         <div style={{...T.tiny,fontSize:12}}>Evolve:Wellbeing {APP_VERSION}</div>
       </div>
     </div>
@@ -1409,6 +1377,9 @@ export default function App() {
   const [monthlyDue,      setMonthlyDue]      = useState(false)
   const [weekData,        setWeekData]        = useState([])
   const [syncedCount,     setSyncedCount]     = useState(0)
+  const [fitConnected,    setFitConnected]    = useState(false)
+  const [fitStatus,       setFitStatus]       = useState('checking') // 'checking'|'idle'|'connecting'|'error'
+  const [autoFilled,      setAutoFilled]      = useState({})
   const [clientTargets,   setClientTargets]   = useState(DEFAULT_TARGETS)
   const [targetSource,    setTargetSource]    = useState("defaults")
   const [selectedDay,     setSelectedDay]     = useState(null)  // for DayDetailModal
@@ -1419,7 +1390,7 @@ export default function App() {
   const todayKey  = todayISO()
   const promptIdx = new Date().getDay()
 
-  const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>activeHabits.includes(h.id))
+  const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>h.id==='workout'||activeHabits.includes(h.id))
   const completedHabits = visibleHabits.filter(h=>habitValues[h.id]!==undefined&&habitValues[h.id]!==''&&habitValues[h.id]!==null)
   const allGreen        = visibleHabits.length>0 && visibleHabits.every(h=>Number(habitValues[h.id]||0)>=h.green)
 
@@ -1470,6 +1441,37 @@ export default function App() {
     }
   },[])
 
+  // ── Google Fit — check connection ──────────────────────
+  useEffect(()=>{
+    if (!client) return
+    const clientId = client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
+    setFitStatus('checking')
+    checkFitConnection(APPS_SCRIPT_URL, clientId)
+      .then(connected => {
+        setFitConnected(connected)
+        setFitStatus('idle')
+        if (!connected) return null
+        return fetchFitData(APPS_SCRIPT_URL, clientId)
+      })
+      .then(result => {
+        if (!result) return
+        if (result.connected && result.data) {
+          const filled = {}
+          if (result.data.steps != null) filled.steps = result.data.steps
+          if (result.data.sleep != null) filled.sleep = result.data.sleep
+          if (Object.keys(filled).length > 0) {
+            setAutoFilled(filled)
+            setHabitValues(prev => {
+              const next = {...prev}
+              Object.entries(filled).forEach(([k,v]) => { if (prev[k]===undefined||prev[k]==='') next[k]=v })
+              return next
+            })
+          }
+        }
+      })
+      .catch(() => setFitStatus('idle'))
+  },[client])
+
   // ── Client setup ───────────────────────────────────────
   useEffect(()=>{
     if(!client)return
@@ -1486,24 +1488,15 @@ export default function App() {
 
   // ── Fetch coach-set targets ────────────────────────────
   // No cache — fetch fresh on every load so coach changes take effect immediately.
-  // Also refreshes client.goal in case the coach updates it after setup.
   useEffect(()=>{
     if (!client || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') return
     const clientId = client.clientId || client.name.trim().toLowerCase().replace(/\s+/g, '-')
     fetch(`${APPS_SCRIPT_URL}?action=getTargets&clientId=${encodeURIComponent(clientId)}`)
       .then(r => r.json())
       .then(json => {
-        if (!json.success) return
-        if (json.targets) {
+        if (json.success && json.targets) {
           setClientTargets(json.targets)
           setTargetSource(json.source || 'defaults')
-        }
-        // Goal can change in the sheet after setup — keep client state and
-        // localStorage in sync so SettingsScreen and future loads pick it up.
-        if (json.goal && json.goal !== client.goal) {
-          const updated = { ...client, goal: json.goal }
-          setClient(updated)
-          LS.set('evolve_client', updated)
         }
       })
       .catch(() => {}) // Silent fail — defaults already in state
@@ -1537,7 +1530,7 @@ export default function App() {
         if (window.OneSignal) {
           window.OneSignal.User.addTags({
             client_name:  info.name,
-            client_id:    info.clientId,
+            client_id:    info.name.trim().toLowerCase().replace(/\s+/g,'-'),
             client_email: info.email,
           })
         }
@@ -1698,6 +1691,7 @@ export default function App() {
               const editing = filled || clearedHabits[h.id] // show input box even when value is blank, post-clear
               const col=habitColor(h,val), bg=habitBg(h,val)
               const prev=LS.get(`log_${yesterday()}`)?.habits?.[h.id]
+              const isAuto=autoFilled[h.id]!==undefined
 
               const handleClear=()=>{
                 setHabitValues(v=>({...v,[h.id]:''}))
@@ -1706,12 +1700,46 @@ export default function App() {
 
               const handleTap=()=>{
                 if (editing) return // input box already showing — nothing to do
-                const prefill = prev ?? h.target
+                const prefill = autoFilled[h.id] ?? prev ?? h.target
                 setHabitValues(v=>({...v,[h.id]:Number(prefill)}))
+              }
+
+              // ── Checkbox habit (workout) ──
+              if (h.type === 'checkbox') {
+                const isYes = val === 1
+                const isNo  = val === 0
+                const cbFilled = val === 0 || val === 1
+                const cbCol = cbFilled ? (isYes ? GREEN : AMBER) : 'rgba(28,43,58,0.12)'
+                const cbBg  = cbFilled ? (isYes ? GREEN_LIGHT : AMBER_LIGHT) : WHITE
+                return (
+                  <div key={h.id} style={{background:cbBg,border:`2px solid ${cbCol}`,borderRadius:14,padding:16,transition:'all .15s',boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}}>
+                    <div style={{fontSize:26,marginBottom:8}}>{h.icon}</div>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:10}}>{h.label}</div>
+                    <div style={{display:'flex',gap:8}}>
+                      <button
+                        onClick={()=>setHabitValues(p=>({...p,[h.id]:isYes?'':1}))}
+                        style={{flex:1,padding:'10px 4px',borderRadius:9,border:`2px solid ${isYes?GREEN:'rgba(28,43,58,0.15)'}`,background:isYes?GREEN:WHITE,color:isYes?WHITE:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',letterSpacing:'0.04em',cursor:'pointer',transition:'all .15s'}}>
+                        ✓ Yes
+                      </button>
+                      <button
+                        onClick={()=>setHabitValues(p=>({...p,[h.id]:isNo?'':0}))}
+                        style={{flex:1,padding:'10px 4px',borderRadius:9,border:`2px solid ${isNo?AMBER:'rgba(28,43,58,0.15)'}`,background:isNo?AMBER_LIGHT:WHITE,color:isNo?AMBER:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',letterSpacing:'0.04em',cursor:'pointer',transition:'all .15s'}}>
+                        ✕ No
+                      </button>
+                    </div>
+                    {cbFilled&&(
+                      <button onClick={()=>setHabitValues(p=>({...p,[h.id]:''}))}
+                        style={{width:'100%',marginTop:7,background:'transparent',border:'1px solid rgba(28,43,58,0.12)',borderRadius:6,padding:'4px',color:'#a0aec0',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:11,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
+                        ✕ Clear
+                      </button>
+                    )}
+                  </div>
+                )
               }
 
               return(
                 <div key={h.id} style={{background:filled?bg:WHITE,border:`2px solid ${filled?col:'rgba(28,43,58,0.12)'}`,borderRadius:14,padding:16,position:'relative',transition:'all .15s',boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}}>
+                  {isAuto&&<div style={{position:'absolute',top:8,right:8,background:GREEN,color:WHITE,fontSize:10,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",borderRadius:5,padding:'2px 6px',textTransform:'uppercase',letterSpacing:'0.04em'}}>Auto</div>}
                   <div style={{fontSize:26,marginBottom:8}}>{h.icon}</div>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>{h.label}</div>
                   {editing?(
@@ -1739,7 +1767,7 @@ export default function App() {
                     <div onClick={handleTap} style={{cursor:'pointer'}}>
                       <div style={{...T.tiny,fontSize:13,marginBottom:8}}>{prev!==undefined?`Yesterday: ${prev} ${h.unit}`:`Target: ${h.target} ${h.unit}`}</div>
                       <div style={{background:NAVY,color:WHITE,borderRadius:8,padding:'8px 10px',textAlign:'center',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,textTransform:'uppercase',letterSpacing:'0.05em'}}>
-                        {prev!==undefined?'↩ Use yesterday':'Tap to fill'}
+                        {isAuto?'↩ Auto-filled':prev!==undefined?'↩ Use yesterday':'Tap to fill'}
                       </div>
                     </div>
                   )}
@@ -1879,37 +1907,27 @@ export default function App() {
         </div>
       )}
 
-{/* ── LEARN ── */}
-{learnPage==='hub' && (
-  <LearnHub
-    onOpenGuide={()=>setLearnPage('guide')}
-    onOpenSleepHygiene={()=>setLearnPage('sleep-hygiene')}
-    onOpenStepsGuide={()=>setLearnPage('steps-guide')}
-    onOpenHydrationGuide={()=>setLearnPage('hydration-guide')}
-    onOpenTopic={(id)=>setLearnPage(id)}
-    onBack={()=>setLearnPage(null)}
-  />
-)}
-{learnPage==='guide' && (
-  <HowToGuidePage onBack={()=>setLearnPage('hub')} />
-)}
-{learnPage==='sleep-hygiene' && (
-  <SleepHygieneGuidePage onBack={()=>setLearnPage('hub')} />
-)}
-{learnPage==='steps-guide' && (
-  <StepsGuidePage onBack={()=>setLearnPage('hub')} />
-)}
-{learnPage==='hydration-guide' && (
-  <HydrationGuidePage onBack={()=>setLearnPage('hub')} />
-)}
-{learnPage && learnPage!=='hub' && learnPage!=='guide' && learnPage!=='sleep-hygiene' && learnPage!=='steps-guide' && learnPage!=='hydration-guide' && (
-  <ScienceTopicPage topicId={learnPage} clientTargets={clientTargets} onBack={()=>setLearnPage('hub')} />
-)}
+      {/* ── LEARN ── */}
+      {learnPage==='hub' && (
+        <LearnHub
+          onOpenGuide={()=>setLearnPage('guide')}
+          onOpenTopic={(id)=>setLearnPage(id)}
+          onBack={()=>setLearnPage(null)}
+        />
+      )}
+      {learnPage==='guide' && (
+        <HowToGuidePage onBack={()=>setLearnPage('hub')} />
+      )}
+      {learnPage && learnPage!=='hub' && learnPage!=='guide' && (
+        <ScienceTopicPage topicId={learnPage} clientTargets={clientTargets} onBack={()=>setLearnPage('hub')} />
+      )}
 
       {/* ── SETTINGS ── */}
       {!learnPage && view==='settings'&&(
         <SettingsScreen
           client={client}
+          fitToken={fitConnected}
+          fitStatus={fitStatus}
           clientTargets={clientTargets}
           targetSource={targetSource}
           visibleHabits={visibleHabits}
@@ -1918,6 +1936,22 @@ export default function App() {
           onOpenLearn={()=>setLearnPage('hub')}
           onSignOut={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false)}}
           onDeleteRequest={()=>{}}
+          onConnectFit={async()=>{
+            setFitStatus('connecting')
+            try {
+              const clientId=client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
+              await initiateGoogleFitAuth(APPS_SCRIPT_URL, clientId, client.name)
+              // initiateGoogleFitAuth redirects — if we get here it failed
+              setFitStatus('error')
+            } catch { setFitStatus('error') }
+          }}
+          onDisconnectFit={async()=>{
+            const clientId=client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
+            await disconnectFit(APPS_SCRIPT_URL, clientId)
+            setFitConnected(false)
+            setAutoFilled({})
+            setFitStatus('idle')
+          }}
         />
       )}
 
@@ -1937,7 +1971,7 @@ export default function App() {
             <div style={{...T.super,marginBottom:4}}>Active Habits</div>
             <div style={{...T.h3,fontSize:22,marginBottom:6}}>Select Up to 5</div>
             <div style={{...T.small,marginBottom:20}}>Choose which habits appear in the client's daily log.</div>
-            {ALL_HABITS.map(h=>{const on=activeHabits.includes(h.id);return(
+            {ALL_HABITS.filter(h=>h.id!=='workout').map(h=>{const on=activeHabits.includes(h.id);return(
               <button key={h.id} onClick={()=>{if(on)setActiveHabits(p=>p.filter(x=>x!==h.id));else if(activeHabits.length<5)setActiveHabits(p=>[...p,h.id])}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:on?`${ORANGE}10`:CREAM,border:`1.5px solid ${on?ORANGE:'rgba(28,43,58,0.12)'}`,borderRadius:10,padding:'14px 16px',marginBottom:8,color:on?NAVY:'#718096',fontFamily:"'Barlow',sans-serif",fontSize:16,cursor:on||activeHabits.length<5?'pointer':'not-allowed',textAlign:'left'}}>
                 <span style={{fontSize:22}}>{h.icon}</span>
                 <div style={{flex:1}}><div style={{fontWeight:600,fontSize:16,color:on?NAVY:'#718096'}}>{h.label}</div><div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>{h.desc}</div></div>
@@ -1945,6 +1979,12 @@ export default function App() {
               </button>
             )})}
             <div style={{...T.tiny,marginTop:6,fontSize:13}}>{activeHabits.length}/5 selected</div>
+            {/* Workout — always on, shown as fixed toggle (non-removable) */}
+            <div style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:`${ORANGE}10`,border:`1.5px solid ${ORANGE}`,borderRadius:10,padding:'14px 16px',marginTop:8,boxSizing:'border-box'}}>
+              <span style={{fontSize:22}}>💪</span>
+              <div style={{flex:1}}><div style={{fontWeight:600,fontSize:16,color:NAVY}}>Workout</div><div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>Always tracked — did you work out today?</div></div>
+              <span style={{background:NAVY,color:WHITE,borderRadius:10,padding:'3px 10px',fontSize:13,fontWeight:700}}>Always On</span>
+            </div>
             <div style={{marginTop:22,paddingTop:18,borderTop:'1px solid rgba(28,43,58,0.1)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <div><div style={{fontWeight:600,fontSize:17,color:NAVY}}>Cycle Tracking</div><div style={{...T.tiny,marginTop:3,fontSize:13}}>Enable for peri/menopausal clients</div></div>
               <button onClick={()=>setShowCycle(v=>!v)} style={{background:showCycle?ORANGE:CREAM,border:`1.5px solid ${showCycle?ORANGE:'rgba(28,43,58,0.18)'}`,borderRadius:20,padding:'10px 22px',color:showCycle?WHITE:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>{showCycle?'On':'Off'}</button>
