@@ -1239,18 +1239,8 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
 
   const handleDelete = () => {
     if (!deleteConfirm) { setDeleteConfirm(true); return }
-    const subject = encodeURIComponent('Account Deletion Request — ' + client.name)
-    const body    = encodeURIComponent('Hi,
-
-I would like to request deletion of my Evolve:Wellbeing account and all associated data.
-
-Name: ' + client.name + '
-Email: ' + client.email + '
-Joined: ' + (client.joinedAt ? new Date(client.joinedAt).toLocaleDateString('en-GB') : 'Unknown') + '
-
-Please confirm once my data has been removed.
-
-Thank you')
+    const subject = encodeURIComponent('Account Deletion Request - ' + client.name)
+    const body    = encodeURIComponent('Hi,%0A%0AI would like to request deletion of my Evolve:Wellbeing account and all associated data.%0A%0AName: ' + client.name + '%0AEmail: ' + client.email + '%0AJoined: ' + (client.joinedAt ? new Date(client.joinedAt).toLocaleDateString('en-GB') : 'Unknown') + '%0A%0APlease confirm once my data has been removed.%0A%0AThank you')
     window.open('mailto:evolve.human01@gmail.com?subject=' + subject + '&body=' + body)
     onDeleteRequest()
   }
