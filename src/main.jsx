@@ -1,12 +1,18 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
-import PrivacyPolicy from './PrivacyPolicy.jsx'
+import App, { ErrorBoundary } from './App.jsx'
+import CoachDashboard from './CoachDashboard.jsx'
 
-const path = window.location.pathname
+// ── ROUTING ───────────────────────────────────────────────
+// No router library in this project — single check at the entry
+// point. Strip trailing slash so both /coach and /coach/ match.
+const path = window.location.pathname.replace(/\/+$/, '')
+const isCoachRoute = path === '/coach'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {path === '/privacy-policy' ? <PrivacyPolicy /> : <App />}
+    <ErrorBoundary>
+      {isCoachRoute ? <CoachDashboard /> : <App />}
+    </ErrorBoundary>
   </React.StrictMode>
 )
