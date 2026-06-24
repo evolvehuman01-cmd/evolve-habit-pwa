@@ -1492,6 +1492,7 @@ export default function App() {
   const [learnPage,       setLearnPage]       = useState(null) // null | 'hub' | 'guide' | topicId
   const [coachUnlocked,   setCoachUnlocked]   = useState(false)
   const [showCoachToast,  setShowCoachToast]  = useState(false)
+  const DEFAULT_ACTIVE_HABITS = ['sleep','steps','hydration','meals','mindfulness']
   const [activeHabits,    setActiveHabits]    = useState(['sleep','steps','hydration','meals','mindfulness'])
   const [showCycle,       setShowCycle]       = useState(false)
   const [habitValues,     setHabitValues]     = useState({})
@@ -1527,7 +1528,7 @@ export default function App() {
   const todayKey  = todayISO()
   const promptIdx = new Date().getDay()
 
-  const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>h.id==='workout'||h.id==='breathwork'||activeHabits.includes(h.id))
+  const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>activeHabits.includes(h.id))
   const completedHabits = visibleHabits.filter(h=>habitValues[h.id]!==undefined&&habitValues[h.id]!==''&&habitValues[h.id]!==null)
   const allGreen        = visibleHabits.length>0 && visibleHabits.every(h=>h.type==='checkbox'?habitValues[h.id]===1:h.invert?Number(habitValues[h.id]||0)<=h.green:Number(habitValues[h.id]||0)>=h.green)
 
@@ -1605,6 +1606,12 @@ export default function App() {
         if (json.success && json.targets) {
           setClientTargets(json.targets)
           setTargetSource(json.source || 'defaults')
+          if (json.targets.activeHabits) {
+            const parsed = typeof json.targets.activeHabits === 'string'
+              ? json.targets.activeHabits.split(',').map(s=>s.trim()).filter(Boolean)
+              : json.targets.activeHabits
+            setActiveHabits(parsed)
+          }
         }
       })
       .catch(() => {}) // Silent fail — defaults already in state
@@ -1628,8 +1635,8 @@ export default function App() {
   useEffect(()=>{if(!client)return;LS.set(`log_${todayKey}`,{habits:habitValues,metrics:metricValues,cyclePhase,reflection})},[habitValues,metricValues,cyclePhase,reflection,client,todayKey])
 
   // ── Config ─────────────────────────────────────────────
-  useEffect(()=>{const cfg=LS.get('evolve_config');if(cfg){if(cfg.activeHabits)setActiveHabits(cfg.activeHabits);if(cfg.showCycle!==undefined)setShowCycle(cfg.showCycle)}},[])
-  useEffect(()=>{LS.set('evolve_config',{activeHabits,showCycle})},[activeHabits,showCycle])
+  useEffect(()=>{const cfg=LS.get('evolve_config');if(cfg&&cfg.showCycle!==undefined)setShowCycle(cfg.showCycle)},[])
+  useEffect(()=>{LS.set('evolve_config',{showCycle})},[showCycle])
   useEffect(()=>{if(cycleDay1)LS.set('evolve_cycle_day1',cycleDay1)},[cycleDay1])
 
   // ── Install btn ────────────────────────────────────────
@@ -2109,24 +2116,17 @@ export default function App() {
             <div style={{...T.tiny,marginBottom:16,fontSize:13}}>Joined: {client.joinedAt?new Date(client.joinedAt).toLocaleDateString('en-GB'):'Unknown'} · Monthly check-in day: {client.startDay||1}</div>
             <button onClick={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false);setView('log')}} style={{background:CREAM,border:'1px solid rgba(28,43,58,0.18)',borderRadius:8,padding:'10px 20px',color:'#718096',fontFamily:"'Barlow',sans-serif",fontSize:15,cursor:'pointer'}}>Clear Client (Sign Out)</button>
           </Card>
-          <div style={{background:WHITE,border:`1.5px solid ${ORANGE}`,borderRadius:14,padding:26,marginBottom:14,boxShadow:'0 1px 4px rgba(28,43,58,0.07)'}}>
+          <div style={{background:WHITE,border:'1.5px solid rgba(28,43,58,0.12)',borderRadius:14,padding:26,marginBottom:14,boxShadow:'0 1px 4px rgba(28,43,58,0.07)'}}>
             <div style={{...T.super,marginBottom:4}}>Active Habits</div>
-            <div style={{...T.h3,fontSize:22,marginBottom:6}}>Select Up to 5</div>
-            <div style={{...T.small,marginBottom:20}}>Choose which habits appear in the client's daily log.</div>
-            {ALL_HABITS.filter(h=>h.id!=='workout'&&h.id!=='breathwork').map(h=>{const on=activeHabits.includes(h.id);return(
-              <button key={h.id} onClick={()=>{if(on)setActiveHabits(p=>p.filter(x=>x!==h.id));else if(activeHabits.length<6)setActiveHabits(p=>[...p,h.id])}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:on?`${ORANGE}10`:CREAM,border:`1.5px solid ${on?ORANGE:'rgba(28,43,58,0.12)'}`,borderRadius:10,padding:'14px 16px',marginBottom:8,color:on?NAVY:'#718096',fontFamily:"'Barlow',sans-serif",fontSize:16,cursor:on||activeHabits.length<6?'pointer':'not-allowed',textAlign:'left'}}>
+            <div style={{...T.h3,fontSize:22,marginBottom:6}}>Set by your coach</div>
+            <div style={{...T.small,marginBottom:16}}>Your coach controls which habits appear in your daily log.</div>
+            {ALL_HABITS.filter(h=>activeHabits.includes(h.id)).map(h=>(
+              <div key={h.id} style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:`${ORANGE}10`,border:`1.5px solid ${ORANGE}`,borderRadius:10,padding:'14px 16px',marginBottom:8}}>
                 <span style={{fontSize:22}}>{h.icon}</span>
-                <div style={{flex:1}}><div style={{fontWeight:600,fontSize:16,color:on?NAVY:'#718096'}}>{h.label}</div><div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>{h.desc}</div></div>
-                {on&&<span style={{background:ORANGE,color:WHITE,borderRadius:10,padding:'3px 10px',fontSize:13,fontWeight:700}}>Active</span>}
-              </button>
-            )})}
-            <div style={{...T.tiny,marginTop:6,fontSize:13}}>{activeHabits.length}/6 selected</div>
-            {/* Workout — always on, shown as fixed toggle (non-removable) */}
-            <div style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:`${ORANGE}10`,border:`1.5px solid ${ORANGE}`,borderRadius:10,padding:'14px 16px',marginTop:8,boxSizing:'border-box'}}>
-              <span style={{fontSize:22}}>💪</span>
-              <div style={{flex:1}}><div style={{fontWeight:600,fontSize:16,color:NAVY}}>Workout</div><div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>Always tracked — did you work out today?</div></div>
-              <span style={{background:NAVY,color:WHITE,borderRadius:10,padding:'3px 10px',fontSize:13,fontWeight:700}}>Always On</span>
-            </div>
+                <div style={{flex:1}}><div style={{fontWeight:600,fontSize:16,color:NAVY}}>{h.label}</div><div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>{h.desc}</div></div>
+                <span style={{background:ORANGE,color:WHITE,borderRadius:10,padding:'3px 10px',fontSize:13,fontWeight:700}}>Active</span>
+              </div>
+            ))}
             <div style={{marginTop:22,paddingTop:18,borderTop:'1px solid rgba(28,43,58,0.1)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <div><div style={{fontWeight:600,fontSize:17,color:NAVY}}>Cycle Tracking</div><div style={{...T.tiny,marginTop:3,fontSize:13}}>Enable for peri/menopausal clients</div></div>
               <button onClick={()=>setShowCycle(v=>!v)} style={{background:showCycle?ORANGE:CREAM,border:`1.5px solid ${showCycle?ORANGE:'rgba(28,43,58,0.18)'}`,borderRadius:20,padding:'10px 22px',color:showCycle?WHITE:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>{showCycle?'On':'Off'}</button>
