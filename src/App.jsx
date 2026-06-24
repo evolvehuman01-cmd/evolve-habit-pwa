@@ -4,6 +4,7 @@ import {
   CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ReferenceLine, ComposedChart, Area
 } from 'recharts'
+import { initiateGoogleFitAuth, checkFitConnection, fetchFitData, disconnectFit } from './useHealthData.js'
 import { queueLog, getQueueLength, flushQueue } from './useOfflineQueue.js'
 import CoachDashboard from './CoachDashboard.jsx'
 import { LearnHub, HowToGuidePage, ScienceTopicPage } from './LearnScreen.jsx'
@@ -73,18 +74,20 @@ const DEFAULT_TARGETS = {
   sleep: 7.5, steps: 8000, hydration: 2.5,
   meals: 3, mindfulness: 10, mobility: 10,
   stress: 5, mood: 6, energy: 6,
-  workout: 1,
+  breathwork: 1,
+  pace: 50,
 }
 
 // ── HABITS — targets applied dynamically from coach ───────
 const ALL_HABITS = [
-  { id:'sleep',       label:'Sleep Routine', icon:'🌙', desc:'Hours of sleep last night',        unit:'hrs',   min:0, max:14,    step:0.5, autoFill:'sleep' },
-  { id:'steps',       label:'Daily Steps',   icon:'👟', desc:'Total steps today',                 unit:'steps', min:0, max:30000, step:100, autoFill:'steps' },
-  { id:'hydration',   label:'Hydration',     icon:'💧', desc:'Total fluid intake today',          unit:'L',     min:0, max:6,     step:0.25,autoFill:null },
-  { id:'meals',       label:'Meal Structure',icon:'🥗', desc:'Planned, structured meals today',   unit:'meals', min:0, max:6,     step:1,   autoFill:null },
-  { id:'mindfulness', label:'Mindfulness',   icon:'🧠', desc:'Mindfulness or breathwork today',  unit:'min',   min:0, max:60,    step:1,   autoFill:null },
-  { id:'mobility',    label:'Mobility',      icon:'🧘', desc:'Dedicated mobility or flexibility',unit:'min',   min:0, max:120,   step:5,   autoFill:null },
-  { id:'workout',     label:'Workout',       icon:'💪', desc:'Did you work out today?',           unit:'',      min:0, max:1,     step:1,   autoFill:null,  type:'checkbox' },
+  { id:'sleep',       label:'Sleep Routine', icon:'🌙', desc:'Hours of sleep last night',           unit:'hrs',   min:0, max:14,    step:0.5, autoFill:'sleep' },
+  { id:'steps',       label:'Daily Steps',   icon:'👟', desc:'Total steps today',                    unit:'steps', min:0, max:30000, step:100, autoFill:'steps' },
+  { id:'hydration',   label:'Hydration',     icon:'💧', desc:'Total fluid intake today',             unit:'L',     min:0, max:6,     step:0.25,autoFill:null },
+  { id:'meals',       label:'Meal Structure',icon:'🥗', desc:'Planned, structured meals today',      unit:'meals', min:0, max:6,     step:1,   autoFill:null },
+  { id:'mindfulness', label:'Mindfulness',   icon:'🧠', desc:'Mindfulness practice today',           unit:'min',   min:0, max:60,    step:1,   autoFill:null },
+  { id:'mobility',    label:'Mobility',      icon:'🧘', desc:'Dedicated mobility or flexibility',    unit:'min',   min:0, max:120,   step:5,   autoFill:null },
+  { id:'breathwork',  label:'Breathwork',    icon:'🫁', desc:'Breathwork protocol completed today',  unit:'',      min:0, max:1,     step:1,   autoFill:null, type:'boolean' },
+  { id:'pace',        label:'Pace Points',   icon:'🌡️', desc:'Total pace points used today',         unit:'pts',   min:0, max:100,   step:1,   autoFill:null, invert:true },
 ]
 
 // Merge static habit definitions with dynamic targets from coach
@@ -93,20 +96,20 @@ function buildHabitsWithTargets(targets) {
   return ALL_HABITS.map(h => ({
     ...h,
     target: t[h.id],
-    green:  h.id === 'steps' ? t.steps      :
+    green:  h.type === 'boolean' ? 1 :
+            h.id === 'steps' ? t.steps      :
             h.id === 'sleep' ? t.sleep       :
             h.id === 'hydration' ? t.hydration :
             h.id === 'meals' ? t.meals        :
             h.id === 'mindfulness' ? t.mindfulness :
-            h.id === 'mobility' ? t.mobility  :
-            h.id === 'workout' ? 1            : t[h.id],
-    amber:  h.id === 'steps' ? t.steps * 0.6      :
+            h.id === 'mobility' ? t.mobility  : t[h.id],
+    amber:  h.type === 'boolean' ? 1 :
+            h.id === 'steps' ? t.steps * 0.6      :
             h.id === 'sleep' ? t.sleep - 1          :
             h.id === 'hydration' ? t.hydration * 0.7 :
             h.id === 'meals' ? Math.max(1, t.meals - 1) :
             h.id === 'mindfulness' ? t.mindfulness * 0.5 :
-            h.id === 'mobility' ? t.mobility * 0.5   :
-            h.id === 'workout' ? 0                   : t[h.id] * 0.8,
+            h.id === 'mobility' ? t.mobility * 0.5   : t[h.id] * 0.8,
   }))
 }
 
@@ -114,29 +117,10 @@ const METRICS = [
   { id:'stressRPE', label:'Stress',   icon:'⚡', invert:true,  note:'1 = very calm · 10 = extreme' },
   { id:'mood',      label:'Mood',     icon:'😊', invert:false, note:'1 = very low · 10 = excellent' },
   { id:'energy',    label:'Energy',   icon:'🔋', invert:false, note:'1 = exhausted · 10 = full' },
-  { id:'digestion', label:'Digestion',icon:'🫁', invert:false, note:'1 = very poor · 10 = excellent' },
+  { id:'digestion', label:'Digestion',icon:'🔄', invert:false, note:'1 = very poor · 10 = excellent' },
 ]
 
-// ── CYCLE PHASE CALCULATOR ───────────────────────────────
-const CYCLE_PHASES = [
-  { label: 'Menstruation',  days: [1,5],   icon: '🔴', desc: 'Days 1–5' },
-  { label: 'Follicular',    days: [6,13],  icon: '🌱', desc: 'Days 6–13' },
-  { label: 'Ovulation',     days: [14,14], icon: '⭐', desc: 'Day 14' },
-  { label: 'Early Luteal',  days: [15,20], icon: '🌕', desc: 'Days 15–20' },
-  { label: 'Late Luteal',   days: [21,28], icon: '🌘', desc: 'Days 21–28' },
-]
-
-function getCyclePhase(cycleDay1Str) {
-  if (!cycleDay1Str) return null
-  const start = new Date(cycleDay1Str)
-  start.setHours(0,0,0,0)
-  const today = new Date()
-  today.setHours(0,0,0,0)
-  const dayNum = Math.floor((today - start) / 86400000) + 1
-  if (dayNum > 35) return { label: 'unknown', dayNum, expired: true }
-  const phase = CYCLE_PHASES.find(p => dayNum >= p.days[0] && dayNum <= p.days[1])
-  return phase ? { ...phase, dayNum, expired: false } : { label: 'Late Luteal', dayNum, expired: false, icon: '🌘', desc: 'Day ' + dayNum }
-}
+const CYCLE_OPTS = ['Day 1–5 — Menstruation','Day 6–13 — Follicular','Day 14 — Ovulation','Day 15–20 — Early Luteal','Day 21–28 — Late Luteal','Perimenopause — irregular','Not applicable today']
 
 const DAILY_PROMPTS = [
   "What made today's habits easier or harder than usual?",
@@ -150,7 +134,7 @@ const DAILY_PROMPTS = [
 
 const WEEKLY_QUESTIONS = [
   { id:'weekRating',     label:'How would you rate your overall week?',           type:'slider', min:1, max:10, low:'Really tough', high:'Outstanding' },
-  { id:'habitHighlight', label:'Which habit felt most natural this week?',         type:'select', options:['Sleep Routine','Daily Steps','Hydration','Meal Structure','Mindfulness','Mobility','None felt natural'] },
+  { id:'habitHighlight', label:'Which habit felt most natural this week?',         type:'select', options:['Sleep Routine','Daily Steps','Hydration','Meal Structure','Mindfulness','Mobility','Breathwork','Pace Points','None felt natural'] },
   { id:'biggestBarrier', label:'What was your biggest barrier this week?',         type:'select', options:['Time','Energy','Motivation','Stress','Travel / disruption','Illness','Nothing significant'] },
   { id:'weekWin',        label:'What is one win from this week, however small?',   type:'text',   placeholder:'e.g. hit my step target 5 out of 7 days...' },
   { id:'weekFocus',      label:'What is your #1 focus for next week?',             type:'text',   placeholder:'e.g. drink water first thing every morning...' },
@@ -161,7 +145,7 @@ const MONTHLY_QUESTIONS = [
   { id:'monthRating',     label:'How would you rate this month overall?',          type:'slider', min:1, max:10, low:'Very difficult', high:'My best month' },
   { id:'biggestChange',   label:'What is the biggest positive change you have noticed?', type:'text', placeholder:'In your energy, mood, sleep, body, mindset...' },
   { id:'stillStruggling', label:'What are you still finding difficult?',           type:'text',   placeholder:'Be honest — this is for your coach...' },
-  { id:'habitToAdd',      label:'Is there a habit you would like to add or swap?', type:'select', options:['No changes needed','Sleep Routine','Daily Steps','Hydration','Meal Structure','Mindfulness','Mobility','Discuss with coach'] },
+  { id:'habitToAdd',      label:'Is there a habit you would like to add or swap?', type:'select', options:['No changes needed','Sleep Routine','Daily Steps','Hydration','Meal Structure','Mindfulness','Mobility','Breathwork','Pace Points','Discuss with coach'] },
   { id:'goalProgress',    label:'How close do you feel to your original programme goal?', type:'slider', min:1, max:10, low:'Far away', high:'Achieved it' },
   { id:'monthNote',       label:'Anything else for your coach this month?',        type:'text',   placeholder:'Open space...' },
 ]
@@ -218,7 +202,7 @@ const isWeeklyDue  = () => {
   if (LS.get(`checkin_weekly_done_${wk}`)) return false
   return (dow===0 && h>=18) || (dow===1 && h<12)
 }
-const isMonthlyDue = (client) => { const mk=getMonthKey(); if(LS.get(`checkin_monthly_done_${mk}`)) return false; if(client?.joinedAt&&(new Date()-new Date(client.joinedAt))<28*86400000) return false; const sd=Math.min(client?.startDay||1,28),td=new Date().getDate(); return td>=sd&&td<=sd+3 }
+const isMonthlyDue = (client) => { const mk=getMonthKey(); if(LS.get(`checkin_monthly_done_${mk}`)) return false; const sd=Math.min(client?.startDay||1,28),td=new Date().getDate(); return td>=sd&&td<=sd+3 }
 
 // ── STREAK HELPERS ────────────────────────────────────────
 const getStreaks = () => ({ ls:LS.get('streak_log',{count:0,lastDate:null,best:0}), ts:LS.get('streak_target',{count:0,lastDate:null,best:0}) })
@@ -226,7 +210,7 @@ const getStreaks = () => ({ ls:LS.get('streak_log',{count:0,lastDate:null,best:0
 function updateStreaks(habitValues, visibleHabits) {
   const today=todayISO(), yest=yesterday()
   const hasLogged  = Object.values(habitValues).some(v=>v!==''&&v!==undefined&&v!==null)
-  const greenCount = visibleHabits.filter(h=>Number(habitValues[h.id]||0)>=h.green).length
+  const greenCount = visibleHabits.filter(h=>h.type==='boolean'?habitValues[h.id]===1:h.invert?Number(habitValues[h.id]||0)<=h.green:Number(habitValues[h.id]||0)>=h.green).length
   const onTarget   = greenCount>=Math.ceil(visibleHabits.length*0.6)
 
   let ls=LS.get('streak_log',{count:0,lastDate:null,best:0})
@@ -255,8 +239,8 @@ function wasMissed() {
 }
 
 // ── COLOUR HELPERS ────────────────────────────────────────
-const habitColor = (h,v) => { if(v===''||v===null||v===undefined) return '#cbd5e0'; const n=Number(v); return n>=h.green?GREEN:n>=h.amber?AMBER:RED }
-const habitBg    = (h,v) => { if(v===''||v===null||v===undefined) return WHITE; const n=Number(v); return n>=h.green?GREEN_LIGHT:n>=h.amber?AMBER_LIGHT:RED_LIGHT }
+const habitColor = (h,v) => { if(v===''||v===null||v===undefined) return '#cbd5e0'; if(h.type==='boolean') return v===1?GREEN:RED; const n=Number(v); if(h.invert) return n<=h.green?GREEN:n<=h.amber?AMBER:RED; return n>=h.green?GREEN:n>=h.amber?AMBER:RED }
+const habitBg    = (h,v) => { if(v===''||v===null||v===undefined) return WHITE; if(h.type==='boolean') return v===1?GREEN_LIGHT:RED_LIGHT; const n=Number(v); if(h.invert) return n<=h.green?GREEN_LIGHT:n<=h.amber?AMBER_LIGHT:RED_LIGHT; return n>=h.green?GREEN_LIGHT:n>=h.amber?AMBER_LIGHT:RED_LIGHT }
 const metricColor = (m,v) => { const n=Number(v??5); if(m.invert){return n<=5?GREEN:n<=7?AMBER:RED} return n>=7?GREEN:n>=5?AMBER:RED }
 
 // ── PRIDE BAND ────────────────────────────────────────────
@@ -413,7 +397,7 @@ function HabitCalendar({ visibleHabits, onDayTap }) {
     const log=LS.get(`log_${key}`)
     let status='none'
     if (log) {
-      const gc=visibleHabits.filter(h=>Number(log.habits?.[h.id]||0)>=h.green).length
+      const gc=visibleHabits.filter(h=>h.type==='boolean'?log.habits?.[h.id]===1:h.invert?Number(log.habits?.[h.id]||0)<=h.green:Number(log.habits?.[h.id]||0)>=h.green).length
       const pct=visibleHabits.length?gc/visibleHabits.length:0
       status=pct>=0.8?'green':pct>=0.5?'amber':'red'
     }
@@ -426,13 +410,13 @@ function HabitCalendar({ visibleHabits, onDayTap }) {
     <Card>
       <div style={{...T.super,marginBottom:4}}>Last 30 Days</div>
       <div style={{...T.h3,fontSize:20,marginBottom:6}}>Habit Calendar</div>
-      <div style={{...T.tiny,marginBottom:12,fontSize:12}}>Tap any day to view or log values</div>
+      <div style={{...T.tiny,marginBottom:12,fontSize:12}}>Tap any day to see your logged values</div>
       <div style={{display:'flex',flexDirection:'column',gap:5}}>
         {weeks.map((week,wi)=>(
           <div key={wi} style={{display:'flex',gap:5}}>
             {week.map(day=>(
               <div key={day.key}
-                onClick={()=>onDayTap&&onDayTap(day.key,day.status)}
+                onClick={()=>onDayTap&&onDayTap(day.key)}
                 style={{flex:1,aspectRatio:'1',borderRadius:5,background:sc[day.status],border:day.isToday?`2px solid ${NAVY}`:'none',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',transition:'opacity .1s'}}
               >
                 <span style={{fontSize:10,color:day.status==='none'?'#a0aec0':WHITE,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif"}}>{day.day}</span>
@@ -942,148 +926,7 @@ function SetupScreen({ onComplete }) {
   )
 }
 
-// ── RETRO LOG MODAL ──────────────────────────────────────
-// Allows logging a past day (within 7 days). Sends to coach
-// with isRetro:true flag. Does NOT affect streak counters.
-function RetroLogModal({ date, visibleHabits, client, appsScriptUrl, onClose, onSaved }) {
-  const d         = new Date(date)
-  const dateLabel = d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})
-  const existingLog = LS.get(`log_${date}`)
-
-  const [habitValues,  setHabitValues]  = useState(existingLog?.habits  || {})
-  const [metricValues, setMetricValues] = useState(existingLog?.metrics  || {stressRPE:5,mood:6,energy:6,digestion:7})
-  const [reflection,   setReflection]   = useState(existingLog?.reflection || '')
-  const [sendStatus,   setSendStatus]   = useState('idle')
-
-  const completedHabits = visibleHabits.filter(h=>habitValues[h.id]!==undefined&&habitValues[h.id]!==''&&habitValues[h.id]!==null)
-  const inp = {width:'100%',background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:10,padding:'12px 14px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:16,outline:'none',boxSizing:'border-box'}
-
-  const handleSend = async () => {
-    setSendStatus('sending')
-    const clientId = client?.clientId || client?.name?.trim().toLowerCase().replace(/\s+/g,'-') || 'unknown'
-    const payload = {
-      date,
-      clientId,
-      clientName:  client?.name  || '',
-      clientEmail: client?.email || '',
-      habits:      habitValues,
-      metrics:     metricValues,
-      cyclePhase:  '',
-      reflection,
-      habitsCompleted: completedHabits.length,
-      habitsTotal:     visibleHabits.length,
-      isRetro:  true,
-      isEdit:   !!existingLog,
-      logStreak:    0, // retro never affects streak
-      targetStreak: 0,
-    }
-    // Save to localStorage regardless
-    LS.set(`log_${date}`, { habits:habitValues, metrics:metricValues, cyclePhase:'', reflection, isRetro:true })
-
-    if (!navigator.onLine) {
-      queueLog(payload, appsScriptUrl)
-      setSendStatus('queued')
-      setTimeout(()=>onSaved(date), 1500)
-      return
-    }
-    try {
-      await fetch(appsScriptUrl, {method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-      setSendStatus('success')
-      setTimeout(()=>onSaved(date), 1500)
-    } catch {
-      queueLog(payload, appsScriptUrl)
-      setSendStatus('queued')
-      setTimeout(()=>onSaved(date), 1500)
-    }
-  }
-
-  return (
-    <div onClick={onClose} style={{position:'fixed',inset:0,zIndex:9990,background:'rgba(28,43,58,0.7)',display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:WHITE,borderRadius:'18px 18px 0 0',width:'100%',maxWidth:600,maxHeight:'90vh',overflow:'auto',paddingBottom:32}}>
-        {/* Handle */}
-        <div style={{display:'flex',justifyContent:'center',padding:'12px 0 4px'}}>
-          <div style={{width:40,height:4,borderRadius:2,background:'rgba(28,43,58,0.15)'}}/>
-        </div>
-        <div style={{padding:'8px 20px 0'}}>
-          {/* Header */}
-          <div style={{background:NAVY,borderRadius:12,padding:'14px 16px',marginBottom:18}}>
-            <div style={{...T.super,color:ORANGE,marginBottom:2}}>Retrospective Log</div>
-            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:22,color:WHITE,textTransform:'uppercase'}}>{dateLabel}</div>
-            <div style={{fontSize:13,color:'rgba(255,255,255,0.5)',marginTop:4}}>This log will be sent to your coach marked as retrospective</div>
-          </div>
-
-          {/* Habits */}
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:10}}>Habits</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:18}}>
-            {visibleHabits.map(h=>{
-              const val = habitValues[h.id]
-              const filled = val!==undefined&&val!==''&&val!==null
-              const col = habitColor(h,val)
-              const bg  = habitBg(h,val)
-
-              if (h.type==='checkbox') {
-                const isYes=val===1, isNo=val===0, cbFilled=val===0||val===1
-                const cbCol=cbFilled?(isYes?GREEN:AMBER):'rgba(28,43,58,0.12)'
-                const cbBg=cbFilled?(isYes?GREEN_LIGHT:AMBER_LIGHT):WHITE
-                return (
-                  <div key={h.id} style={{background:cbBg,border:`2px solid ${cbCol}`,borderRadius:14,padding:14,transition:'all .15s'}}>
-                    <div style={{fontSize:22,marginBottom:6}}>{h.icon}</div>
-                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:8}}>{h.label}</div>
-                    <div style={{display:'flex',gap:6}}>
-                      <button onClick={()=>setHabitValues(p=>({...p,[h.id]:isYes?'':1}))} style={{flex:1,padding:'8px 2px',borderRadius:8,border:`2px solid ${isYes?GREEN:'rgba(28,43,58,0.15)'}`,background:isYes?GREEN:WHITE,color:isYes?WHITE:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:'uppercase',cursor:'pointer'}}>✓ Yes</button>
-                      <button onClick={()=>setHabitValues(p=>({...p,[h.id]:isNo?'':0}))}  style={{flex:1,padding:'8px 2px',borderRadius:8,border:`2px solid ${isNo?AMBER:'rgba(28,43,58,0.15)'}`,background:isNo?AMBER_LIGHT:WHITE,color:isNo?AMBER:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:13,textTransform:'uppercase',cursor:'pointer'}}>✕ No</button>
-                    </div>
-                  </div>
-                )
-              }
-
-              return (
-                <div key={h.id} style={{background:filled?bg:WHITE,border:`2px solid ${filled?col:'rgba(28,43,58,0.12)'}`,borderRadius:14,padding:14,transition:'all .15s'}}>
-                  <div style={{fontSize:22,marginBottom:6}}>{h.icon}</div>
-                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:8}}>{h.label}</div>
-                  <input type="number" min={h.min} max={h.max} step={h.step} value={val??''}
-                    onChange={e=>{const v=e.target.value;setHabitValues(p=>({...p,[h.id]:v===''?'':Number(v)}))}}
-                    placeholder={`Target: ${h.target}${h.unit}`}
-                    style={{width:'100%',background:'rgba(255,255,255,0.6)',border:`1px solid ${col}55`,borderRadius:7,padding:'7px 10px',color:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:14,fontWeight:600,outline:'none',boxSizing:'border-box'}}/>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Wellness metrics */}
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:10}}>Wellness</div>
-          {METRICS.map(m=>(
-            <div key={m.id} style={{background:WHITE,borderRadius:12,padding:'12px 14px',marginBottom:10,border:'1px solid rgba(28,43,58,0.1)'}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                <span style={{fontSize:18}}>{m.icon}</span>
-                <div style={{fontWeight:700,fontSize:15,color:NAVY,flex:1}}>{m.label}</div>
-                <div style={{minWidth:38,textAlign:'center',background:metricColor(m,metricValues[m.id]??5),color:WHITE,borderRadius:8,padding:'3px 7px',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:20}}>{metricValues[m.id]??5}</div>
-              </div>
-              <NumberPicker metric={m} value={metricValues[m.id]} onChange={v=>setMetricValues(p=>({...p,[m.id]:v}))}/>
-            </div>
-          ))}
-
-          {/* Reflection */}
-          <div style={{marginBottom:18}}>
-            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:8}}>Note (optional)</div>
-            <textarea value={reflection} onChange={e=>setReflection(e.target.value)} rows={3} placeholder="Anything to add about this day?" style={{...inp,resize:'vertical',lineHeight:1.6}}/>
-          </div>
-
-          {/* Send button */}
-          <button onClick={handleSend} disabled={sendStatus==='sending'||sendStatus==='success'} style={{width:'100%',background:sendStatus==='success'?GREEN:sendStatus==='queued'?AMBER:ORANGE,border:'none',borderRadius:12,padding:'16px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:18,letterSpacing:'0.06em',textTransform:'uppercase',cursor:sendStatus==='sending'?'wait':'pointer',transition:'background .25s',marginBottom:10}}>
-            {sendStatus==='idle'   &&'Send Retrospective Log →'}
-            {sendStatus==='sending'&&'Sending...'}
-            {sendStatus==='success'&&'✓ Sent to Coach'}
-            {sendStatus==='queued' &&'📡 Queued — Will Send When Online'}
-          </button>
-          <button onClick={onClose} style={{width:'100%',background:'transparent',border:'none',color:'#a0aec0',fontFamily:"'Barlow',sans-serif",fontSize:15,cursor:'pointer',padding:'8px'}}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── DAY DETAIL MODAL ─────────────────────────────────────────────
+// ── DAY DETAIL MODAL ─────────────────────────────────────
 // Tapping a calendar day shows actual logged values for that day
 function DayDetailModal({ date, visibleHabits, onClose }) {
   const log = LS.get(`log_${date}`)
@@ -1120,7 +963,7 @@ function DayDetailModal({ date, visibleHabits, onClose }) {
                       <div style={{fontSize:20,marginBottom:4}}>{h.icon}</div>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:2}}>{h.label}</div>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:24,color:filled?col:'#cbd5e0'}}>
-                        {filled?(h.type==='checkbox'?(val===1?'Yes':'No'):val):'—'}<span style={{fontSize:12,fontWeight:400,marginLeft:3}}>{filled&&h.type!=='checkbox'?h.unit:''}</span>
+                        {filled?val:'—'}<span style={{fontSize:12,fontWeight:400,marginLeft:3}}>{filled?h.unit:''}</span>
                       </div>
                     </div>
                   )
@@ -1348,41 +1191,15 @@ function OneSignalToggle() {
   )
 }
 
-function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onOpenLearn }) {
+function SettingsScreen({ client, fitToken, fitStatus, clientTargets, targetSource, visibleHabits, exportDone, setExportDone, onSignOut, onDeleteRequest, onConnectFit, onDisconnectFit, onOpenLearn }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [openSection, setOpenSection]     = useState(null)
-
-  const toggleSection = (id) => setOpenSection(prev => prev === id ? null : id)
-
-  const AccordionCard = ({ id, title, subtitle, icon, children, danger }) => {
-    const isOpen = openSection === id
-    return (
-      <Card style={{marginBottom:10,border:`1.5px solid ${danger&&isOpen?RED:'rgba(28,43,58,0.1)'}`,overflow:'hidden',padding:0}}>
-        <button
-          onClick={()=>toggleSection(id)}
-          style={{width:'100%',display:'flex',alignItems:'center',gap:12,padding:'16px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
-          {icon&&<span style={{fontSize:22,flexShrink:0}}>{icon}</span>}
-          <div style={{flex:1}}>
-            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:danger?RED:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>{title}</div>
-            {subtitle&&<div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>{subtitle}</div>}
-          </div>
-          <span style={{fontSize:18,color:'#cbd5e0',transform:isOpen?'rotate(90deg)':'rotate(0deg)',transition:'transform .2s',flexShrink:0}}>›</span>
-        </button>
-        {isOpen&&(
-          <div style={{padding:'0 18px 18px'}}>
-            <div style={{height:1,background:'rgba(28,43,58,0.08)',marginBottom:16}}/>
-            {children}
-          </div>
-        )}
-      </Card>
-    )
-  }
 
   const handleDelete = () => {
     if (!deleteConfirm) { setDeleteConfirm(true); return }
-    const subject = encodeURIComponent('Account Deletion Request - ' + client.name)
-    const body    = encodeURIComponent('Hi,%0A%0AI would like to request deletion of my Evolve:Wellbeing account and all associated data.%0A%0AName: ' + client.name + '%0AEmail: ' + client.email + '%0AJoined: ' + (client.joinedAt ? new Date(client.joinedAt).toLocaleDateString('en-GB') : 'Unknown') + '%0A%0APlease confirm once my data has been removed.%0A%0AThank you')
-    window.open('mailto:evolve.human01@gmail.com?subject=' + subject + '&body=' + body)
+    // Send deletion request email to coach
+    const subject = encodeURIComponent(`Account Deletion Request — ${client.name}`)
+    const body    = encodeURIComponent(`Hi,\n\nI would like to request deletion of my Evolve:Wellbeing account and all associated data.\n\nName: ${client.name}\nEmail: ${client.email}\nJoined: ${client.joinedAt ? new Date(client.joinedAt).toLocaleDateString('en-GB') : 'Unknown'}\n\nPlease confirm once my data has been removed.\n\nThank you`)
+    window.open(`mailto:evolve.human01@gmail.com?subject=${subject}&body=${body}`)
     onDeleteRequest()
   }
 
@@ -1391,7 +1208,9 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
       <div style={{...T.super,marginBottom:4}}>Account</div>
       <div style={{...T.h2,fontSize:30,marginBottom:22}}>Settings</div>
 
-      <AccordionCard id="profile" title="Your Profile" icon="👤" subtitle={client.name}>
+      {/* Profile */}
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Your Profile</div>
         <div style={{fontSize:19,fontWeight:700,color:NAVY,marginBottom:4}}>{client.name}</div>
         <div style={{fontSize:16,color:'#718096',marginBottom:4}}>{client.email}</div>
         <div style={{...T.tiny,marginBottom:18,fontSize:13}}>Member since {client.joinedAt?new Date(client.joinedAt).toLocaleDateString('en-GB',''):'Unknown'}</div>
@@ -1400,21 +1219,60 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
           Sign Out of This Device
         </button>
         <div style={{...T.tiny,marginTop:10,lineHeight:1.6,fontSize:13}}>Signing out clears your data from this device only. Your logs remain with your coach.</div>
-      </AccordionCard>
+      </Card>
 
-      <AccordionCard id="targets" title="Your Targets" icon="🎯" subtitle={targetSource==='coach'?'Coach-set targets active':'Default targets active'}>
+      {/* Google Fit */}
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Health Integration</div>
+        {fitStatus === 'checking' ? (
+          <div style={{height:44,background:'rgba(28,43,58,0.06)',borderRadius:10,display:'flex',alignItems:'center',paddingLeft:14}}>
+            <div style={{...T.tiny,fontSize:14}}>Checking Google Fit status...</div>
+          </div>
+        ) : fitToken ? (
+          <>
+            <div style={{background:GREEN_LIGHT,border:`1px solid ${GREEN}`,borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontSize:18}}>✓</span>
+              <div style={{fontWeight:600,fontSize:16,color:GREEN}}>Google Fit Connected</div>
+            </div>
+            <div style={{...T.small,marginBottom:14}}>Steps and sleep auto-fill from your health data daily.</div>
+            <button onClick={onDisconnectFit} style={{background:CREAM,border:'1.5px solid rgba(28,43,58,0.2)',borderRadius:10,padding:'11px 22px',color:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>Disconnect</button>
+          </>
+        ) : fitStatus === 'connecting' ? (
+          <div style={{background:`${ORANGE}12`,border:`1px solid ${ORANGE}`,borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:18}}>⏳</span>
+            <div style={{fontWeight:600,fontSize:15,color:ORANGE}}>Opening Google authorisation — complete it in the new tab then return here.</div>
+          </div>
+        ) : (
+          <>
+            {fitStatus === 'error' && (
+              <div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'10px 14px',marginBottom:12,fontSize:14,color:RED}}>
+                Could not connect to Google Fit. Check that your coach has configured the integration, then try again.
+              </div>
+            )}
+            <div style={{fontWeight:600,fontSize:16,color:'#718096',marginBottom:6}}>Google Fit not connected</div>
+            <div style={{...T.small,marginBottom:14}}>Connect to auto-fill steps and sleep each day. Requires your coach to have configured the server integration.</div>
+            <button onClick={onConnectFit} style={{background:ORANGE,border:'none',borderRadius:10,padding:'11px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>Connect Google Fit</button>
+          </>
+        )}
+      </Card>
+
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Your Targets</div>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
           <div style={{width:10,height:10,borderRadius:'50%',background:targetSource==='coach'?GREEN:AMBER,flexShrink:0}}/>
-          <div style={{fontWeight:600,fontSize:16,color:NAVY}}>{targetSource==='coach' ? 'Coach-set targets active' : 'Default targets active'}</div>
+          <div style={{fontWeight:600,fontSize:16,color:NAVY}}>
+            {targetSource==='coach' ? 'Coach-set targets active' : 'Default targets active'}
+          </div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
           {[
-            {label:'Sleep',       value:clientTargets.sleep+'h',                       icon:'🌙'},
-            {label:'Steps',       value:Number(clientTargets.steps).toLocaleString(),  icon:'👟'},
-            {label:'Hydration',   value:clientTargets.hydration+'L',                   icon:'💧'},
-            {label:'Meals',       value:clientTargets.meals+' meals',                  icon:'🥗'},
-            {label:'Mindfulness', value:clientTargets.mindfulness+'min',               icon:'🧠'},
-            {label:'Mobility',    value:clientTargets.mobility+'min',                  icon:'🧘'},
+            {label:'Sleep',    value:`${clientTargets.sleep}h`,        icon:'🌙'},
+            {label:'Steps',    value:Number(clientTargets.steps).toLocaleString(), icon:'👟'},
+            {label:'Hydration',value:`${clientTargets.hydration}L`,    icon:'💧'},
+            {label:'Meals',    value:`${clientTargets.meals} meals`,   icon:'🥗'},
+            {label:'Mindfulness',value:`${clientTargets.mindfulness}min`,icon:'🧠'},
+            {label:'Mobility', value:`${clientTargets.mobility}min`,   icon:'🧘'},
+            {label:'Pace Points',value:`≤${clientTargets.pace??50}pts`,   icon:'🌡️'},
           ].map(t=>(
             <div key={t.label} style={{background:CREAM,borderRadius:9,padding:'10px 12px',display:'flex',alignItems:'center',gap:8}}>
               <span style={{fontSize:16}}>{t.icon}</span>
@@ -1425,53 +1283,69 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
             </div>
           ))}
         </div>
-        {targetSource==='defaults'&&<div style={{...T.tiny,marginTop:12,lineHeight:1.6,fontSize:13}}>Your coach has not set individual targets yet. Evidence-based defaults are in use.</div>}
-        {clientTargets.notes&&<div style={{marginTop:12,background:`${ORANGE}10`,borderLeft:`3px solid ${ORANGE}`,borderRadius:8,padding:'10px 12px',fontSize:14,color:'#4a5568',lineHeight:1.6}}>{clientTargets.notes}</div>}
-      </AccordionCard>
-
-      <AccordionCard id="notifications" title="Notifications" icon="🔔" subtitle="Daily reminder at 8pm">
+        {targetSource==='defaults'&&(
+          <div style={{...T.tiny,marginTop:12,lineHeight:1.6,fontSize:13}}>Your coach hasn't set individual targets yet. Evidence-based defaults are in use.</div>
+        )}
+        {clientTargets.notes&&(
+          <div style={{marginTop:12,background:`${ORANGE}10`,borderLeft:`3px solid ${ORANGE}`,borderRadius:8,padding:'10px 12px',fontSize:14,color:'#4a5568',lineHeight:1.6}}>{clientTargets.notes}</div>
+        )}
+      </Card>
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Notifications</div>
         <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Daily Reminder — 8pm</div>
-        <div style={{...T.small,marginBottom:18,lineHeight:1.6}}>You receive a push notification at 8pm every evening and a check-in reminder every Sunday at 6pm.</div>
+        <div style={{...T.small,marginBottom:18,lineHeight:1.6}}>
+          You receive a push notification at 8pm every evening and a check-in reminder every Sunday at 6pm.
+        </div>
         <OneSignalToggle />
-      </AccordionCard>
+      </Card>
 
-      <Card style={{marginBottom:10,padding:18,cursor:'pointer'}} onClick={onOpenLearn}>
+      <Card style={{padding:18,cursor:'pointer'}} onClick={onOpenLearn}>
         <div style={{display:'flex',alignItems:'center',gap:12}}>
-          <span style={{fontSize:22}}>📘</span>
+          <span style={{fontSize:26}}>📘</span>
           <div style={{flex:1}}>
-            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>Learn</div>
-            <div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>How-to guide and the science behind your targets</div>
+            <div style={{fontWeight:700,fontSize:17,color:NAVY}}>Learn</div>
+            <div style={{...T.small,fontSize:14}}>How-to guide and the science behind your targets</div>
           </div>
           <span style={{fontSize:18,color:'#cbd5e0'}}>›</span>
         </div>
       </Card>
 
-      <AccordionCard id="export" title="Your Data" icon="📊" subtitle="Export your logs as CSV">
+      {/* Delete account */}
+      <Card style={{padding:22,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.1)'}`}}>
+        <div style={{...T.super,marginBottom:10,color:RED}}>Delete Account</div>
+        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
+          This sends a data deletion request to your coach at <strong>evolve.human01@gmail.com</strong>. Your coach will manually remove your data and confirm via email. This cannot be undone.
+        </div>
+        {deleteConfirm && (
+          <div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'12px 14px',marginBottom:14,fontSize:15,color:RED,fontWeight:600}}>
+            Are you sure? This will open your email app to send a deletion request to your coach.
+          </div>
+        )}
+        <button onClick={handleDelete} style={{background:deleteConfirm?RED:CREAM,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.2)'}`,borderRadius:10,padding:'11px 22px',color:deleteConfirm?WHITE:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
+          {deleteConfirm?'Yes, Send Deletion Request':'Request Account Deletion'}
+        </button>
+      </Card>
+
+      {/* Data Export */}
+      <Card style={{padding:22,marginBottom:14}}>
+        <div style={{...T.super,marginBottom:10}}>Your Data</div>
         <div style={{fontWeight:700,fontSize:17,color:NAVY,marginBottom:6}}>Export Your Logs</div>
-        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>Download a CSV file of your last 90 days of habit data. Opens in Excel, Google Sheets, or any spreadsheet app.</div>
+        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
+          Download a CSV file of your last 90 days of habit data. Opens in Excel, Google Sheets, or any spreadsheet app.
+        </div>
         <button onClick={()=>{exportToCSV(client,visibleHabits);setExportDone(true);setTimeout(()=>setExportDone(false),3000)}}
           style={{background:exportDone?GREEN:NAVY,border:'none',borderRadius:10,padding:'12px 22px',color:WHITE,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer',transition:'background .2s'}}>
           {exportDone?'✓ Downloaded':'Download CSV'}
         </button>
-      </AccordionCard>
+      </Card>
 
-      <AccordionCard id="delete" title="Delete Account" icon="⚠️" subtitle="Send a data deletion request" danger={true}>
-        <div style={{...T.small,marginBottom:16,lineHeight:1.6}}>
-          This sends a data deletion request to your coach at <strong>evolve.human01@gmail.com</strong>. Your coach will manually remove your data and confirm via email. This cannot be undone.
-        </div>
-        {deleteConfirm&&<div style={{background:RED_LIGHT,border:`1px solid ${RED}`,borderRadius:10,padding:'12px 14px',marginBottom:14,fontSize:15,color:RED,fontWeight:600}}>Are you sure? This will open your email app to send a deletion request to your coach.</div>}
-        <button onClick={handleDelete} style={{background:deleteConfirm?RED:CREAM,border:`1.5px solid ${deleteConfirm?RED:'rgba(28,43,58,0.2)'}`,borderRadius:10,padding:'11px 22px',color:deleteConfirm?WHITE:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
-          {deleteConfirm?'Yes, Send Deletion Request':'Request Account Deletion'}
-        </button>
-      </AccordionCard>
-
-      <div style={{textAlign:'center',paddingBottom:8,marginTop:8}}>
+      {/* Version */}
+      <div style={{textAlign:'center',paddingBottom:8}}>
         <div style={{...T.tiny,fontSize:12}}>Evolve:Wellbeing {APP_VERSION}</div>
       </div>
     </div>
   )
 }
-
 
 // ── MAIN APP ──────────────────────────────────────────────
 export default function App() {
@@ -1490,7 +1364,6 @@ export default function App() {
   const [clearedHabits,   setClearedHabits]   = useState({}) // habits the user explicitly cleared — skip prefill on next tap
   const [metricValues,    setMetricValues]    = useState({stressRPE:5,mood:6,energy:6,digestion:7})
   const [cyclePhase,      setCyclePhase]      = useState('')
-  const [cycleDay1,       setCycleDay1]       = useState(null) // ISO date string of last Day 1
   const [reflection,      setReflection]      = useState('')
   const [showReflection,  setShowReflection]  = useState(false)
   const [sendStatus,      setSendStatus]      = useState('idle')
@@ -1507,11 +1380,12 @@ export default function App() {
   const [monthlyDue,      setMonthlyDue]      = useState(false)
   const [weekData,        setWeekData]        = useState([])
   const [syncedCount,     setSyncedCount]     = useState(0)
+  const [fitConnected,    setFitConnected]    = useState(false)
+  const [fitStatus,       setFitStatus]       = useState('checking') // 'checking'|'idle'|'connecting'|'error'
   const [autoFilled,      setAutoFilled]      = useState({})
   const [clientTargets,   setClientTargets]   = useState(DEFAULT_TARGETS)
   const [targetSource,    setTargetSource]    = useState("defaults")
   const [selectedDay,     setSelectedDay]     = useState(null)  // for DayDetailModal
-  const [retroLogDay,     setRetroLogDay]     = useState(null)  // for RetroLogModal
   const [editMode,        setEditMode]        = useState(false) // edit after send
   const [exportDone,      setExportDone]      = useState(false)
 
@@ -1519,9 +1393,9 @@ export default function App() {
   const todayKey  = todayISO()
   const promptIdx = new Date().getDay()
 
-  const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>h.id==='workout'||activeHabits.includes(h.id))
+  const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>activeHabits.includes(h.id))
   const completedHabits = visibleHabits.filter(h=>habitValues[h.id]!==undefined&&habitValues[h.id]!==''&&habitValues[h.id]!==null)
-  const allGreen        = visibleHabits.length>0 && visibleHabits.every(h=>Number(habitValues[h.id]||0)>=h.green)
+  const allGreen        = visibleHabits.length>0 && visibleHabits.every(h=>h.type==='boolean'?habitValues[h.id]===1:h.invert?Number(habitValues[h.id]||0)<=h.green:Number(habitValues[h.id]||0)>=h.green)
 
   // ── Boot ───────────────────────────────────────────────
   useEffect(()=>{
@@ -1570,7 +1444,36 @@ export default function App() {
     }
   },[])
 
-
+  // ── Google Fit — check connection ──────────────────────
+  useEffect(()=>{
+    if (!client) return
+    const clientId = client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
+    setFitStatus('checking')
+    checkFitConnection(APPS_SCRIPT_URL, clientId)
+      .then(connected => {
+        setFitConnected(connected)
+        setFitStatus('idle')
+        if (!connected) return null
+        return fetchFitData(APPS_SCRIPT_URL, clientId)
+      })
+      .then(result => {
+        if (!result) return
+        if (result.connected && result.data) {
+          const filled = {}
+          if (result.data.steps != null) filled.steps = result.data.steps
+          if (result.data.sleep != null) filled.sleep = result.data.sleep
+          if (Object.keys(filled).length > 0) {
+            setAutoFilled(filled)
+            setHabitValues(prev => {
+              const next = {...prev}
+              Object.entries(filled).forEach(([k,v]) => { if (prev[k]===undefined||prev[k]==='') next[k]=v })
+              return next
+            })
+          }
+        }
+      })
+      .catch(() => setFitStatus('idle'))
+  },[client])
 
   // ── Client setup ───────────────────────────────────────
   useEffect(()=>{
@@ -1612,17 +1515,12 @@ export default function App() {
     }, 300000) // 5 minutes
     return ()=>clearInterval(interval)
   },[client])
-  useEffect(()=>{
-    const s=LS.get(`log_${todayKey}`);
-    if(s){setHabitValues(s.habits||{});setMetricValues(s.metrics||{stressRPE:5,mood:6,energy:6,digestion:7});setCyclePhase(s.cyclePhase||'');setReflection(s.reflection||'')}
-    const d1=LS.get('evolve_cycle_day1');if(d1)setCycleDay1(d1)
-  },[todayKey])
+  useEffect(()=>{const s=LS.get(`log_${todayKey}`);if(s){setHabitValues(s.habits||{});setMetricValues(s.metrics||{stressRPE:5,mood:6,energy:6,digestion:7});setCyclePhase(s.cyclePhase||'');setReflection(s.reflection||'')}},[todayKey])
   useEffect(()=>{if(!client)return;LS.set(`log_${todayKey}`,{habits:habitValues,metrics:metricValues,cyclePhase,reflection})},[habitValues,metricValues,cyclePhase,reflection,client,todayKey])
 
   // ── Config ─────────────────────────────────────────────
   useEffect(()=>{const cfg=LS.get('evolve_config');if(cfg){if(cfg.activeHabits)setActiveHabits(cfg.activeHabits);if(cfg.showCycle!==undefined)setShowCycle(cfg.showCycle)}},[])
   useEffect(()=>{LS.set('evolve_config',{activeHabits,showCycle})},[activeHabits,showCycle])
-  useEffect(()=>{if(cycleDay1)LS.set('evolve_cycle_day1',cycleDay1)},[cycleDay1])
 
   // ── Install btn ────────────────────────────────────────
   useEffect(()=>{const btn=document.getElementById('pwa-install-btn');if(!btn||!deferredPrompt)return;const h=async()=>{deferredPrompt.prompt();const{outcome}=await deferredPrompt.userChoice;if(outcome==='accepted'){setShowInstall(false);setDeferredPrompt(null)}};btn.addEventListener('click',h);return()=>btn.removeEventListener('click',h)},[deferredPrompt,showInstall])
@@ -1675,7 +1573,7 @@ export default function App() {
       clientEmail:client?.email||'',
       habits:habitValues,
       metrics:metricValues,
-      cyclePhase:showCycle?(()=>{const p=getCyclePhase(cycleDay1);return p&&!p.expired?p.label:cyclePhase})():'',
+      cyclePhase:showCycle?cyclePhase:'',
       reflectionPrompt:DAILY_PROMPTS[promptIdx%DAILY_PROMPTS.length],
       reflection,
       habitsCompleted:completedHabits.length,
@@ -1747,7 +1645,6 @@ export default function App() {
       {showInstall     && <InstallBanner onDismiss={()=>{setShowInstall(false);LS.set('install_dismissed',true)}}/>}
       {showCoachToast  && <CoachToast onDone={()=>setShowCoachToast(false)}/>}
       {selectedDay     && <DayDetailModal date={selectedDay} visibleHabits={visibleHabits} onClose={()=>setSelectedDay(null)}/>}
-      {retroLogDay    && <RetroLogModal date={retroLogDay} visibleHabits={visibleHabits} client={client} appsScriptUrl={APPS_SCRIPT_URL} onClose={()=>setRetroLogDay(null)} onSaved={(day)=>{setRetroLogDay(null)}}/>}
 
       {/* ── STICKY HEADER BLOCK ── */}
       <div style={{position:'sticky',top:0,zIndex:100,flexShrink:0}}>
@@ -1810,46 +1707,22 @@ export default function App() {
                 setHabitValues(v=>({...v,[h.id]:Number(prefill)}))
               }
 
-              // ── Checkbox habit (workout) ──
-              if (h.type === 'checkbox') {
-                const isYes = val === 1
-                const isNo  = val === 0
-                const cbFilled = val === 0 || val === 1
-                const cbCol = cbFilled ? (isYes ? GREEN : AMBER) : 'rgba(28,43,58,0.12)'
-                const cbBg  = cbFilled ? (isYes ? GREEN_LIGHT : AMBER_LIGHT) : WHITE
-                return (
-                  <div key={h.id} style={{background:cbBg,border:`2px solid ${cbCol}`,borderRadius:14,padding:16,transition:'all .15s',boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}}>
-                    <div style={{fontSize:26,marginBottom:8}}>{h.icon}</div>
-                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:4}}>{h.label}</div>
-                    <div style={{fontSize:13,color:'#718096',marginBottom:10}}>{h.desc}</div>
-                    <div style={{display:'flex',gap:8}}>
-                      <button
-                        onClick={()=>setHabitValues(p=>({...p,[h.id]:isYes?'':1}))}
-                        style={{flex:1,padding:'10px 4px',borderRadius:9,border:`2px solid ${isYes?GREEN:'rgba(28,43,58,0.15)'}`,background:isYes?GREEN:WHITE,color:isYes?WHITE:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',letterSpacing:'0.04em',cursor:'pointer',transition:'all .15s'}}>
-                        ✓ Yes
-                      </button>
-                      <button
-                        onClick={()=>setHabitValues(p=>({...p,[h.id]:isNo?'':0}))}
-                        style={{flex:1,padding:'10px 4px',borderRadius:9,border:`2px solid ${isNo?AMBER:'rgba(28,43,58,0.15)'}`,background:isNo?AMBER_LIGHT:WHITE,color:isNo?AMBER:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',letterSpacing:'0.04em',cursor:'pointer',transition:'all .15s'}}>
-                        ✕ No
-                      </button>
-                    </div>
-                    {cbFilled&&(
-                      <button onClick={()=>setHabitValues(p=>({...p,[h.id]:''}))}
-                        style={{width:'100%',marginTop:7,background:'transparent',border:'1px solid rgba(28,43,58,0.12)',borderRadius:6,padding:'4px',color:'#a0aec0',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,fontSize:11,textTransform:'uppercase',letterSpacing:'0.05em',cursor:'pointer'}}>
-                        ✕ Clear
-                      </button>
-                    )}
-                  </div>
-                )
-              }
-
               return(
                 <div key={h.id} style={{background:filled?bg:WHITE,border:`2px solid ${filled?col:'rgba(28,43,58,0.12)'}`,borderRadius:14,padding:16,position:'relative',transition:'all .15s',boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}}>
                   {isAuto&&<div style={{position:'absolute',top:8,right:8,background:GREEN,color:WHITE,fontSize:10,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",borderRadius:5,padding:'2px 6px',textTransform:'uppercase',letterSpacing:'0.04em'}}>Auto</div>}
                   <div style={{fontSize:26,marginBottom:8}}>{h.icon}</div>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>{h.label}</div>
-                  {editing?(
+                  {h.type==='boolean'?(
+                    <button
+                      onClick={()=>setHabitValues(v=>({...v,[h.id]:val===1?'':1}))}
+                      style={{width:'100%',background:val===1?GREEN_LIGHT:CREAM,border:`2px solid ${val===1?GREEN:'rgba(28,43,58,0.12)'}`,borderRadius:10,padding:'14px 10px',cursor:'pointer',transition:'all .15s',display:'flex',flexDirection:'column',alignItems:'center',gap:4}}
+                    >
+                      <span style={{fontSize:28,lineHeight:1}}>{val===1?'✓':'○'}</span>
+                      <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:14,textTransform:'uppercase',letterSpacing:'0.05em',color:val===1?GREEN:NAVY}}>
+                        {val===1?'Done':'Tap to complete'}
+                      </span>
+                    </button>
+                  ):editing?(
                     <div>
                       <div style={{display:'flex',alignItems:'baseline',gap:5,marginBottom:6}}>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:900,fontSize:30,color:filled?col:'#cbd5e0',lineHeight:1}}>{filled?val:'—'}</div>
@@ -1896,55 +1769,15 @@ export default function App() {
             </Card>
           ))}
 
-          {/* Cycle tracking card */}
-          {showCycle&&(()=>{
-            const phase = getCyclePhase(cycleDay1)
-            const isDay1Today = cycleDay1 === todayKey
-            const handleDay1 = () => {
-              if (isDay1Today) {
-                // untap — revert to previous day1 or null
-                const prev = LS.get('evolve_cycle_day1_prev')
-                setCycleDay1(prev || null)
-              } else {
-                LS.set('evolve_cycle_day1_prev', cycleDay1)
-                setCycleDay1(todayKey)
-              }
-            }
-            return (
-              <div style={{background:WHITE,border:`2px solid rgba(28,43,58,0.12)`,borderRadius:14,padding:16,marginBottom:8,boxShadow:'0 1px 4px rgba(28,43,58,0.06)'}}>
-                <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:12}}>🌙 Cycle Tracking</div>
-
-                {/* Phase display */}
-                {phase && !phase.expired && (
-                  <div style={{background:CREAM,borderRadius:10,padding:'12px 14px',marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
-                    <span style={{fontSize:28}}>{phase.icon}</span>
-                    <div>
-                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:20,color:NAVY}}>{phase.label}</div>
-                      <div style={{fontSize:13,color:'#718096',marginTop:2}}>{phase.desc} · Day {phase.dayNum} of cycle</div>
-                    </div>
-                  </div>
-                )}
-                {(!phase || phase.expired) && (
-                  <div style={{background:CREAM,borderRadius:10,padding:'12px 14px',marginBottom:12}}>
-                    <div style={{fontSize:14,color:'#718096',lineHeight:1.5}}>{cycleDay1 ? 'It has been more than 35 days since your last cycle start. Tap Day 1 when your next cycle begins.' : 'Tap Day 1 below when your period starts to track your cycle phase.'}</div>
-                  </div>
-                )}
-
-                {/* Day 1 checkbox — always present */}
-                <button
-                  onClick={handleDay1}
-                  style={{width:'100%',display:'flex',alignItems:'center',gap:12,background:isDay1Today?`${ORANGE}15`:CREAM,border:`2px solid ${isDay1Today?ORANGE:'rgba(28,43,58,0.15)'}`,borderRadius:10,padding:'12px 14px',cursor:'pointer',textAlign:'left'}}>
-                  <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${isDay1Today?ORANGE:'rgba(28,43,58,0.3)'}`,background:isDay1Today?ORANGE:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                    {isDay1Today&&<span style={{color:WHITE,fontSize:14,fontWeight:700}}>✓</span>}
-                  </div>
-                  <div>
-                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:16,color:NAVY,textTransform:'uppercase',letterSpacing:'0.04em'}}>Day 1 — Period started today</div>
-                    <div style={{fontSize:12,color:'#a0aec0',marginTop:2}}>Resets your cycle phase tracking</div>
-                  </div>
-                </button>
-              </div>
-            )
-          })()}
+          {/* Cycle phase */}
+          {showCycle&&(<>
+            <SL>Cycle Phase</SL>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:4}}>
+              {CYCLE_OPTS.map(opt=>(
+                <button key={opt} onClick={()=>setCyclePhase(opt)} style={{background:cyclePhase===opt?ORANGE:WHITE,border:`1.5px solid ${cyclePhase===opt?ORANGE:'rgba(28,43,58,0.15)'}`,borderRadius:10,padding:'12px 13px',color:cyclePhase===opt?WHITE:NAVY,fontFamily:"'Barlow',sans-serif",fontSize:15,fontWeight:cyclePhase===opt?600:400,cursor:'pointer',textAlign:'left',lineHeight:1.4}}>{opt}</button>
+              ))}
+            </div>
+          </>)}
 
           {/* Reflection — collapsible */}
           <button onClick={()=>setShowReflection(v=>!v)} style={{width:'100%',background:WHITE,border:'1.5px solid rgba(28,43,58,0.12)',borderRadius:12,padding:'14px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',marginTop:8,marginBottom:showReflection?0:8}}>
@@ -1987,14 +1820,7 @@ export default function App() {
           <WeeklyReportCard data={weekData} clientTargets={clientTargets}/>
 
           {/* Calendar — tappable */}
-          <HabitCalendar visibleHabits={visibleHabits} onDayTap={(day,status)=>{
-            const daysAgo = Math.floor((Date.now()-new Date(day).getTime())/86400000)
-            const isToday = daysAgo === 0
-            if (isToday) return // today's log is on the main log screen
-            if (status !== 'none') { setSelectedDay(day); return } // has a log — show read-only
-            if (daysAgo <= 7) { setRetroLogDay(day) } // empty + within 7 days — retro log
-            else { setSelectedDay(day) } // empty + older — show empty detail
-          }}/>
+          <HabitCalendar visibleHabits={visibleHabits} onDayTap={day=>setSelectedDay(day)}/>
 
           {/* Time range */}
           <div style={{display:'flex',gap:8,marginBottom:8,marginTop:8}}>
@@ -2080,6 +1906,8 @@ export default function App() {
       {!learnPage && view==='settings'&&(
         <SettingsScreen
           client={client}
+          fitToken={fitConnected}
+          fitStatus={fitStatus}
           clientTargets={clientTargets}
           targetSource={targetSource}
           visibleHabits={visibleHabits}
@@ -2088,6 +1916,22 @@ export default function App() {
           onOpenLearn={()=>setLearnPage('hub')}
           onSignOut={()=>{LS.del('evolve_client');setClient(null);setCoachUnlocked(false)}}
           onDeleteRequest={()=>{}}
+          onConnectFit={async()=>{
+            setFitStatus('connecting')
+            try {
+              const clientId=client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
+              await initiateGoogleFitAuth(APPS_SCRIPT_URL, clientId, client.name)
+              // initiateGoogleFitAuth redirects — if we get here it failed
+              setFitStatus('error')
+            } catch { setFitStatus('error') }
+          }}
+          onDisconnectFit={async()=>{
+            const clientId=client.clientId || client.name.trim().toLowerCase().replace(/\s+/g,'-')
+            await disconnectFit(APPS_SCRIPT_URL, clientId)
+            setFitConnected(false)
+            setAutoFilled({})
+            setFitStatus('idle')
+          }}
         />
       )}
 
@@ -2107,20 +1951,14 @@ export default function App() {
             <div style={{...T.super,marginBottom:4}}>Active Habits</div>
             <div style={{...T.h3,fontSize:22,marginBottom:6}}>Select Up to 5</div>
             <div style={{...T.small,marginBottom:20}}>Choose which habits appear in the client's daily log.</div>
-            {ALL_HABITS.filter(h=>h.id!=='workout').map(h=>{const on=activeHabits.includes(h.id);return(
-              <button key={h.id} onClick={()=>{if(on)setActiveHabits(p=>p.filter(x=>x!==h.id));else if(activeHabits.length<5)setActiveHabits(p=>[...p,h.id])}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:on?`${ORANGE}10`:CREAM,border:`1.5px solid ${on?ORANGE:'rgba(28,43,58,0.12)'}`,borderRadius:10,padding:'14px 16px',marginBottom:8,color:on?NAVY:'#718096',fontFamily:"'Barlow',sans-serif",fontSize:16,cursor:on||activeHabits.length<5?'pointer':'not-allowed',textAlign:'left'}}>
+            {ALL_HABITS.map(h=>{const on=activeHabits.includes(h.id);return(
+              <button key={h.id} onClick={()=>{if(on)setActiveHabits(p=>p.filter(x=>x!==h.id));else if(activeHabits.length<6)setActiveHabits(p=>[...p,h.id])}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:on?`${ORANGE}10`:CREAM,border:`1.5px solid ${on?ORANGE:'rgba(28,43,58,0.12)'}`,borderRadius:10,padding:'14px 16px',marginBottom:8,color:on?NAVY:'#718096',fontFamily:"'Barlow',sans-serif",fontSize:16,cursor:on||activeHabits.length<6?'pointer':'not-allowed',textAlign:'left'}}>
                 <span style={{fontSize:22}}>{h.icon}</span>
                 <div style={{flex:1}}><div style={{fontWeight:600,fontSize:16,color:on?NAVY:'#718096'}}>{h.label}</div><div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>{h.desc}</div></div>
                 {on&&<span style={{background:ORANGE,color:WHITE,borderRadius:10,padding:'3px 10px',fontSize:13,fontWeight:700}}>Active</span>}
               </button>
             )})}
-            <div style={{...T.tiny,marginTop:6,fontSize:13}}>{activeHabits.length}/5 selected</div>
-            {/* Workout — always on, shown as fixed toggle (non-removable) */}
-            <div style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:`${ORANGE}10`,border:`1.5px solid ${ORANGE}`,borderRadius:10,padding:'14px 16px',marginTop:8,boxSizing:'border-box'}}>
-              <span style={{fontSize:22}}>💪</span>
-              <div style={{flex:1}}><div style={{fontWeight:600,fontSize:16,color:NAVY}}>Workout</div><div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>Always tracked — did you work out today?</div></div>
-              <span style={{background:NAVY,color:WHITE,borderRadius:10,padding:'3px 10px',fontSize:13,fontWeight:700}}>Always On</span>
-            </div>
+            <div style={{...T.tiny,marginTop:6,fontSize:13}}>{activeHabits.length}/6 selected</div>
             <div style={{marginTop:22,paddingTop:18,borderTop:'1px solid rgba(28,43,58,0.1)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <div><div style={{fontWeight:600,fontSize:17,color:NAVY}}>Cycle Tracking</div><div style={{...T.tiny,marginTop:3,fontSize:13}}>Enable for peri/menopausal clients</div></div>
               <button onClick={()=>setShowCycle(v=>!v)} style={{background:showCycle?ORANGE:CREAM,border:`1.5px solid ${showCycle?ORANGE:'rgba(28,43,58,0.18)'}`,borderRadius:20,padding:'10px 22px',color:showCycle?WHITE:NAVY,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:15,textTransform:'uppercase',cursor:'pointer'}}>{showCycle?'On':'Off'}</button>
