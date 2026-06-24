@@ -302,7 +302,6 @@ function HabitAverages({ logs, targets }) {
     { key: 'Mood (1-10)',       label: 'Mood',        unit: '/10' },
     { key: 'Energy (1-10)',     label: 'Energy',      unit: '/10' },
     { key: 'Digestion (1-10)',  label: 'Digestion',   unit: '/10' },
-    { key: 'Workout',           label: 'Workout',     unit: '' },
   ];
 
   const recent = logs.slice(-30);
@@ -396,6 +395,34 @@ function TargetEditor({ client, onSaved, onCancel }) {
   const [error, setError]     = useState(null);
 
   // FIX: keys match client app DEFAULT_TARGETS exactly
+  const ALL_HABIT_OPTIONS = [
+    { id: 'sleep',       label: 'Sleep Routine',  icon: '🌙' },
+    { id: 'steps',       label: 'Daily Steps',    icon: '👟' },
+    { id: 'hydration',   label: 'Hydration',      icon: '💧' },
+    { id: 'meals',       label: 'Meal Structure', icon: '🥗' },
+    { id: 'mindfulness', label: 'Mindfulness',    icon: '🧠' },
+    { id: 'mobility',    label: 'Mobility',       icon: '🧘' },
+    { id: 'workout',     label: 'Workout',        icon: '💪' },
+    { id: 'breathwork',  label: 'Breathwork',     icon: '🫁' },
+    { id: 'pace',        label: 'Pace Points',    icon: '🌡️' },
+  ];
+
+  const DEFAULT_ACTIVE = ['sleep','steps','hydration','meals','mindfulness'];
+
+  const [activeHabits, setActiveHabits] = useState(() => {
+    if (client.targets?.activeHabits) {
+      const raw = client.targets.activeHabits;
+      return typeof raw === 'string' ? raw.split(',').map(s=>s.trim()).filter(Boolean) : raw;
+    }
+    return DEFAULT_ACTIVE;
+  });
+
+  const toggleHabit = (id) => {
+    setActiveHabits(prev =>
+      prev.includes(id) ? prev.filter(h => h !== id) : [...prev, id]
+    );
+  };
+
   const TARGET_FIELDS = [
     { key: 'sleep',       label: 'Sleep target (hrs)',          type: 'number', step: '0.5' },
     { key: 'steps',       label: 'Step target',                 type: 'number', step: '500' },
@@ -403,6 +430,7 @@ function TargetEditor({ client, onSaved, onCancel }) {
     { key: 'meals',       label: 'Meal target (per day)',       type: 'number', step: '1'   },
     { key: 'mindfulness', label: 'Mindfulness target (min)',    type: 'number', step: '1'   },
     { key: 'mobility',    label: 'Mobility target (min)',       type: 'number', step: '5'   },
+    { key: 'pace',        label: 'Pace Points ceiling (0–100)', type: 'number', step: '1'   },
     { key: 'stress',      label: 'Stress baseline (1–10)',      type: 'number', step: '1'   },
     { key: 'mood',        label: 'Mood baseline (1–10)',        type: 'number', step: '1'   },
     { key: 'energy',      label: 'Energy baseline (1–10)',      type: 'number', step: '1'   },
@@ -412,7 +440,7 @@ function TargetEditor({ client, onSaved, onCancel }) {
   const handleSave = async () => {
     setSaving(true); setError(null);
     try {
-      await apiPost({ action: 'updateTargets', clientId: client.clientId, targets });
+      await apiPost({ action: 'updateTargets', clientId: client.clientId, targets: { ...targets, activeHabits: activeHabits.join(',') } });
       onSaved();
     } catch(e) {
       setError(e.message);
@@ -439,6 +467,39 @@ function TargetEditor({ client, onSaved, onCancel }) {
             />
           </div>
         ))}
+      </div>
+
+      <div style={{ marginTop: 24, marginBottom: 8 }}>
+        <h3 style={{ ...S.sectionTitle, marginBottom: 4 }}>Active Habits</h3>
+        <p style={{ ...S.detailMeta, marginBottom: 16 }}>Toggle which habits appear in this client's daily log.</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {ALL_HABIT_OPTIONS.map(h => {
+            const on = activeHabits.includes(h.id);
+            return (
+              <button
+                key={h.id}
+                onClick={() => toggleHabit(h.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  background: on ? '#fff7ed' : '#f9fafb',
+                  border: `1.5px solid ${on ? '#f97316' : '#e5e7eb'}`,
+                  borderRadius: 8, padding: '12px 14px',
+                  cursor: 'pointer', textAlign: 'left', width: '100%',
+                }}
+              >
+                <span style={{ fontSize: 20 }}>{h.icon}</span>
+                <span style={{ flex: 1, fontWeight: 600, fontSize: 15, color: on ? '#1C2B3A' : '#9ca3af' }}>{h.label}</span>
+                <span style={{
+                  background: on ? '#f97316' : '#e5e7eb',
+                  color: on ? '#fff' : '#9ca3af',
+                  borderRadius: 20, padding: '3px 12px', fontSize: 12, fontWeight: 700,
+                }}>
+                  {on ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {error && <p style={S.errorMsg}>Save failed: {error}</p>}
