@@ -1,6 +1,6 @@
 // ── EVOLVE:WELLBEING SERVICE WORKER ──────────────────────
 // Cache version: bump this on every deploy to force update.
-const CACHE_VERSION = 'v10';
+const CACHE_VERSION = 'v11';
 const CACHE_NAME    = `evolve-wellbeing-${CACHE_VERSION}`;
 
 const OFFLINE_URLS = [
