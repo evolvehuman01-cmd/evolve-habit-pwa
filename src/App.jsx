@@ -74,6 +74,8 @@ const DEFAULT_TARGETS = {
   meals: 3, mindfulness: 10, mobility: 10,
   stress: 5, mood: 6, energy: 6,
   workout: 1,
+  breathwork: 1,
+  pace: 50,
 }
 
 // ── HABITS — targets applied dynamically from coach ───────
@@ -82,9 +84,11 @@ const ALL_HABITS = [
   { id:'steps',       label:'Daily Steps',   icon:'👟', desc:'Total steps today',                 unit:'steps', min:0, max:30000, step:100, autoFill:'steps' },
   { id:'hydration',   label:'Hydration',     icon:'💧', desc:'Total fluid intake today',          unit:'L',     min:0, max:6,     step:0.25,autoFill:null },
   { id:'meals',       label:'Meal Structure',icon:'🥗', desc:'Planned, structured meals today',   unit:'meals', min:0, max:6,     step:1,   autoFill:null },
-  { id:'mindfulness', label:'Mindfulness',   icon:'🧠', desc:'Mindfulness or breathwork today',  unit:'min',   min:0, max:60,    step:1,   autoFill:null },
+  { id:'mindfulness', label:'Mindfulness',   icon:'🧠', desc:'Mindfulness practice today',        unit:'min',   min:0, max:60,    step:1,   autoFill:null },
   { id:'mobility',    label:'Mobility',      icon:'🧘', desc:'Dedicated mobility or flexibility',unit:'min',   min:0, max:120,   step:5,   autoFill:null },
   { id:'workout',     label:'Workout',       icon:'💪', desc:'Did you work out today?',           unit:'',      min:0, max:1,     step:1,   autoFill:null,  type:'checkbox' },
+  { id:'breathwork',  label:'Breathwork',    icon:'🫁', desc:'Breathwork protocol completed today', unit:'',      min:0, max:1,     step:1,   autoFill:null,  type:'checkbox' },
+  { id:'pace',        label:'Pace Points',   icon:'🌡️', desc:'Total pace points used today',        unit:'pts',   min:0, max:100,   step:1,   autoFill:null,  invert:true },
 ]
 
 // Merge static habit definitions with dynamic targets from coach
@@ -99,14 +103,18 @@ function buildHabitsWithTargets(targets) {
             h.id === 'meals' ? t.meals        :
             h.id === 'mindfulness' ? t.mindfulness :
             h.id === 'mobility' ? t.mobility  :
-            h.id === 'workout' ? 1            : t[h.id],
+            h.id === 'workout'    ? 1      :
+            h.id === 'breathwork' ? 1      :
+            h.id === 'pace'       ? t.pace  : t[h.id],
     amber:  h.id === 'steps' ? t.steps * 0.6      :
             h.id === 'sleep' ? t.sleep - 1          :
             h.id === 'hydration' ? t.hydration * 0.7 :
             h.id === 'meals' ? Math.max(1, t.meals - 1) :
             h.id === 'mindfulness' ? t.mindfulness * 0.5 :
             h.id === 'mobility' ? t.mobility * 0.5   :
-            h.id === 'workout' ? 0                   : t[h.id] * 0.8,
+            h.id === 'workout'    ? 0              :
+            h.id === 'breathwork' ? 0              :
+            h.id === 'pace'       ? t.pace * 1.2   : t[h.id] * 0.8,
   }))
 }
 
@@ -114,7 +122,7 @@ const METRICS = [
   { id:'stressRPE', label:'Stress',   icon:'⚡', invert:true,  note:'1 = very calm · 10 = extreme' },
   { id:'mood',      label:'Mood',     icon:'😊', invert:false, note:'1 = very low · 10 = excellent' },
   { id:'energy',    label:'Energy',   icon:'🔋', invert:false, note:'1 = exhausted · 10 = full' },
-  { id:'digestion', label:'Digestion',icon:'🫁', invert:false, note:'1 = very poor · 10 = excellent' },
+  { id:'digestion', label:'Digestion',icon:'🔄', invert:false, note:'1 = very poor · 10 = excellent' },
 ]
 
 // ── CYCLE PHASE CALCULATOR ───────────────────────────────
@@ -150,7 +158,7 @@ const DAILY_PROMPTS = [
 
 const WEEKLY_QUESTIONS = [
   { id:'weekRating',     label:'How would you rate your overall week?',           type:'slider', min:1, max:10, low:'Really tough', high:'Outstanding' },
-  { id:'habitHighlight', label:'Which habit felt most natural this week?',         type:'select', options:['Sleep Routine','Daily Steps','Hydration','Meal Structure','Mindfulness','Mobility','None felt natural'] },
+  { id:'habitHighlight', label:'Which habit felt most natural this week?',         type:'select', options:['Sleep Routine','Daily Steps','Hydration','Meal Structure','Mindfulness','Mobility','Breathwork','Pace Points','None felt natural'] },
   { id:'biggestBarrier', label:'What was your biggest barrier this week?',         type:'select', options:['Time','Energy','Motivation','Stress','Travel / disruption','Illness','Nothing significant'] },
   { id:'weekWin',        label:'What is one win from this week, however small?',   type:'text',   placeholder:'e.g. hit my step target 5 out of 7 days...' },
   { id:'weekFocus',      label:'What is your #1 focus for next week?',             type:'text',   placeholder:'e.g. drink water first thing every morning...' },
@@ -161,7 +169,7 @@ const MONTHLY_QUESTIONS = [
   { id:'monthRating',     label:'How would you rate this month overall?',          type:'slider', min:1, max:10, low:'Very difficult', high:'My best month' },
   { id:'biggestChange',   label:'What is the biggest positive change you have noticed?', type:'text', placeholder:'In your energy, mood, sleep, body, mindset...' },
   { id:'stillStruggling', label:'What are you still finding difficult?',           type:'text',   placeholder:'Be honest — this is for your coach...' },
-  { id:'habitToAdd',      label:'Is there a habit you would like to add or swap?', type:'select', options:['No changes needed','Sleep Routine','Daily Steps','Hydration','Meal Structure','Mindfulness','Mobility','Discuss with coach'] },
+  { id:'habitToAdd',      label:'Is there a habit you would like to add or swap?', type:'select', options:['No changes needed','Sleep Routine','Daily Steps','Hydration','Meal Structure','Mindfulness','Mobility','Breathwork','Pace Points','Discuss with coach'] },
   { id:'goalProgress',    label:'How close do you feel to your original programme goal?', type:'slider', min:1, max:10, low:'Far away', high:'Achieved it' },
   { id:'monthNote',       label:'Anything else for your coach this month?',        type:'text',   placeholder:'Open space...' },
 ]
@@ -226,7 +234,7 @@ const getStreaks = () => ({ ls:LS.get('streak_log',{count:0,lastDate:null,best:0
 function updateStreaks(habitValues, visibleHabits) {
   const today=todayISO(), yest=yesterday()
   const hasLogged  = Object.values(habitValues).some(v=>v!==''&&v!==undefined&&v!==null)
-  const greenCount = visibleHabits.filter(h=>Number(habitValues[h.id]||0)>=h.green).length
+  const greenCount = visibleHabits.filter(h=>h.type==='checkbox'?habitValues[h.id]===1:h.invert?Number(habitValues[h.id]||0)<=h.green:Number(habitValues[h.id]||0)>=h.green).length
   const onTarget   = greenCount>=Math.ceil(visibleHabits.length*0.6)
 
   let ls=LS.get('streak_log',{count:0,lastDate:null,best:0})
@@ -255,8 +263,8 @@ function wasMissed() {
 }
 
 // ── COLOUR HELPERS ────────────────────────────────────────
-const habitColor = (h,v) => { if(v===''||v===null||v===undefined) return '#cbd5e0'; const n=Number(v); return n>=h.green?GREEN:n>=h.amber?AMBER:RED }
-const habitBg    = (h,v) => { if(v===''||v===null||v===undefined) return WHITE; const n=Number(v); return n>=h.green?GREEN_LIGHT:n>=h.amber?AMBER_LIGHT:RED_LIGHT }
+const habitColor = (h,v) => { if(v===''||v===null||v===undefined) return '#cbd5e0'; const n=Number(v); if(h.invert) return n<=h.green?GREEN:n<=h.amber?AMBER:RED; return n>=h.green?GREEN:n>=h.amber?AMBER:RED }
+const habitBg    = (h,v) => { if(v===''||v===null||v===undefined) return WHITE; const n=Number(v); if(h.invert) return n<=h.green?GREEN_LIGHT:n<=h.amber?AMBER_LIGHT:RED_LIGHT; return n>=h.green?GREEN_LIGHT:n>=h.amber?AMBER_LIGHT:RED_LIGHT }
 const metricColor = (m,v) => { const n=Number(v??5); if(m.invert){return n<=5?GREEN:n<=7?AMBER:RED} return n>=7?GREEN:n>=5?AMBER:RED }
 
 // ── PRIDE BAND ────────────────────────────────────────────
@@ -413,7 +421,7 @@ function HabitCalendar({ visibleHabits, onDayTap }) {
     const log=LS.get(`log_${key}`)
     let status='none'
     if (log) {
-      const gc=visibleHabits.filter(h=>Number(log.habits?.[h.id]||0)>=h.green).length
+      const gc=visibleHabits.filter(h=>h.type==='checkbox'?log.habits?.[h.id]===1:h.invert?Number(log.habits?.[h.id]||0)<=h.green:Number(log.habits?.[h.id]||0)>=h.green).length
       const pct=visibleHabits.length?gc/visibleHabits.length:0
       status=pct>=0.8?'green':pct>=0.5?'amber':'red'
     }
@@ -1519,9 +1527,9 @@ export default function App() {
   const todayKey  = todayISO()
   const promptIdx = new Date().getDay()
 
-  const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>h.id==='workout'||activeHabits.includes(h.id))
+  const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>h.id==='workout'||h.id==='breathwork'||activeHabits.includes(h.id))
   const completedHabits = visibleHabits.filter(h=>habitValues[h.id]!==undefined&&habitValues[h.id]!==''&&habitValues[h.id]!==null)
-  const allGreen        = visibleHabits.length>0 && visibleHabits.every(h=>Number(habitValues[h.id]||0)>=h.green)
+  const allGreen        = visibleHabits.length>0 && visibleHabits.every(h=>h.type==='checkbox'?habitValues[h.id]===1:h.invert?Number(habitValues[h.id]||0)<=h.green:Number(habitValues[h.id]||0)>=h.green)
 
   // ── Boot ───────────────────────────────────────────────
   useEffect(()=>{
@@ -2105,14 +2113,14 @@ export default function App() {
             <div style={{...T.super,marginBottom:4}}>Active Habits</div>
             <div style={{...T.h3,fontSize:22,marginBottom:6}}>Select Up to 5</div>
             <div style={{...T.small,marginBottom:20}}>Choose which habits appear in the client's daily log.</div>
-            {ALL_HABITS.filter(h=>h.id!=='workout').map(h=>{const on=activeHabits.includes(h.id);return(
-              <button key={h.id} onClick={()=>{if(on)setActiveHabits(p=>p.filter(x=>x!==h.id));else if(activeHabits.length<5)setActiveHabits(p=>[...p,h.id])}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:on?`${ORANGE}10`:CREAM,border:`1.5px solid ${on?ORANGE:'rgba(28,43,58,0.12)'}`,borderRadius:10,padding:'14px 16px',marginBottom:8,color:on?NAVY:'#718096',fontFamily:"'Barlow',sans-serif",fontSize:16,cursor:on||activeHabits.length<5?'pointer':'not-allowed',textAlign:'left'}}>
+            {ALL_HABITS.filter(h=>h.id!=='workout'&&h.id!=='breathwork').map(h=>{const on=activeHabits.includes(h.id);return(
+              <button key={h.id} onClick={()=>{if(on)setActiveHabits(p=>p.filter(x=>x!==h.id));else if(activeHabits.length<6)setActiveHabits(p=>[...p,h.id])}} style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:on?`${ORANGE}10`:CREAM,border:`1.5px solid ${on?ORANGE:'rgba(28,43,58,0.12)'}`,borderRadius:10,padding:'14px 16px',marginBottom:8,color:on?NAVY:'#718096',fontFamily:"'Barlow',sans-serif",fontSize:16,cursor:on||activeHabits.length<6?'pointer':'not-allowed',textAlign:'left'}}>
                 <span style={{fontSize:22}}>{h.icon}</span>
                 <div style={{flex:1}}><div style={{fontWeight:600,fontSize:16,color:on?NAVY:'#718096'}}>{h.label}</div><div style={{fontSize:13,color:'#a0aec0',marginTop:2}}>{h.desc}</div></div>
                 {on&&<span style={{background:ORANGE,color:WHITE,borderRadius:10,padding:'3px 10px',fontSize:13,fontWeight:700}}>Active</span>}
               </button>
             )})}
-            <div style={{...T.tiny,marginTop:6,fontSize:13}}>{activeHabits.length}/5 selected</div>
+            <div style={{...T.tiny,marginTop:6,fontSize:13}}>{activeHabits.length}/6 selected</div>
             {/* Workout — always on, shown as fixed toggle (non-removable) */}
             <div style={{display:'flex',alignItems:'center',gap:12,width:'100%',background:`${ORANGE}10`,border:`1.5px solid ${ORANGE}`,borderRadius:10,padding:'14px 16px',marginTop:8,boxSizing:'border-box'}}>
               <span style={{fontSize:22}}>💪</span>
