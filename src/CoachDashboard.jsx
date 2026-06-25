@@ -24,11 +24,11 @@ async function apiFetch(params) {
 }
 
 async function apiPost(body) {
-  // no-cors required for Apps Script — response is opaque but write succeeds
+  // text/plain avoids CORS preflight — Apps Script receives full body via e.postData.contents
   await fetch(DATA_SCRIPT, {
     method: 'POST',
     mode: 'no-cors',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ ...body, secret: COACH_SECRET })
   });
   return { success: true };
