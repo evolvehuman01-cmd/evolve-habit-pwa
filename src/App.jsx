@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component {
 
 // ── CONFIG ────────────────────────────────────────────────
 const APP_VERSION       = 'v1.0.0'
-const APPS_SCRIPT_URL    = 'https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec'
+const APPS_SCRIPT_URL    = 'https://script.google.com/macros/s/AKfycbyE5QFzwd-FD2sIe00GY5G-qMv2Qg3bFFTga27sQ5xJlJ9G2x9HLeNpMmpbdjvcaKyi/exec'
 const CHECKIN_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyU2Ic2aczSqqDbb5oRb55s8iboXTIev_tVnUSXQxwySw78MZ5tsVibD-psRlvEii2QHg/exec'
 
 // ── BRAND ─────────────────────────────────────────────────
@@ -1599,7 +1599,8 @@ export default function App() {
   // No cache — fetch fresh on every load so coach changes take effect immediately.
   useEffect(()=>{
     if (!client || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') return
-    const clientId = client.clientId || client.name.trim().toLowerCase().replace(/\s+/g, '-')
+    // Always use name-derived slug — sheet ClientID is slug not UUID
+    const clientId = client.name.trim().toLowerCase().replace(/\s+/g, '-')
     fetch(`${APPS_SCRIPT_URL}?action=getTargets&clientId=${encodeURIComponent(clientId)}`)
       .then(r => r.json())
       .then(json => {
