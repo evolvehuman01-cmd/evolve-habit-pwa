@@ -1598,7 +1598,7 @@ export default function App() {
   // ── Fetch coach-set targets ────────────────────────────
   // No cache — fetch fresh on every load so coach changes take effect immediately.
   useEffect(()=>{
-    if (!client || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') return
+    if (!client || APPS_SCRIPT_URL === 'const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec') return
     // Always use name-derived slug — sheet ClientID is slug not UUID
     const clientId = client.name.trim().toLowerCase().replace(/\s+/g, '-')
     fetch(`${APPS_SCRIPT_URL}?action=getTargets&clientId=${encodeURIComponent(clientId)}`)
