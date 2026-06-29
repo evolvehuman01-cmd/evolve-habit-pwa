@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component {
 
 // ── CONFIG ────────────────────────────────────────────────
 const APP_VERSION       = 'v1.0.0'
-const APPS_SCRIPT_URL    = 'https://script.google.com/macros/s/AKfycbyE5QFzwd-FD2sIe00GY5G-qMv2Qg3bFFTga27sQ5xJlJ9G2x9HLeNpMmpbdjvcaKyi/exec'
+const APPS_SCRIPT_URL    = 'https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec'
 const CHECKIN_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyU2Ic2aczSqqDbb5oRb55s8iboXTIev_tVnUSXQxwySw78MZ5tsVibD-psRlvEii2QHg/exec'
 
 // ── BRAND ─────────────────────────────────────────────────
