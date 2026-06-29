@@ -1598,7 +1598,7 @@ export default function App() {
   // ── Fetch coach-set targets ────────────────────────────
   // No cache — fetch fresh on every load so coach changes take effect immediately.
   useEffect(()=>{
-    if (!client || APPS_SCRIPT_URL === 'const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec') return
+    if (!client || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE') return
     // Always use name-derived slug — sheet ClientID is slug not UUID
     const clientId = client.name.trim().toLowerCase().replace(/\s+/g, '-')
     fetch(`${APPS_SCRIPT_URL}?action=getTargets&clientId=${encodeURIComponent(clientId)}`)
@@ -1664,7 +1664,7 @@ export default function App() {
 
   // ── FIX 3: fetchData — graphDays in dep array ensures refetch on tab change AND day switch ──
   const fetchData=useCallback(async()=>{
-    if(!client||APPS_SCRIPT_URL==='https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec')return
+    if(!client||APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE')return
     setLoadingGraphs(true)
     const clientId = client.name.trim().toLowerCase().replace(/\s+/g,'-')
     try{
@@ -1724,7 +1724,7 @@ export default function App() {
 
   // Fix 6: check-in with offline queuing and error feedback
   const handleCheckIn=async(data)=>{
-    if(CHECKIN_SCRIPT_URL==='const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec')return
+    if(CHECKIN_SCRIPT_URL==='YOUR_CHECKIN_APPS_SCRIPT_URL_HERE')return
     if(!navigator.onLine){
       // Queue check-in for retry when back online
       queueLog(data, CHECKIN_SCRIPT_URL)
@@ -2134,8 +2134,8 @@ export default function App() {
             </div>
           </div>
           <Card style={{padding:20}}>
-            <div style={{fontWeight:700,fontSize:16,marginBottom:6,color:APPS_SCRIPT_URL==='const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec'?RED:GREEN}}>{APPS_SCRIPT_URL==='https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec'?'⚠ Not connected to Google Sheets':'✓ Connected to Google Sheets'}</div>
-            <div style={{...T.small}}>{APPS_SCRIPT_URL==='https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec'?'Paste your Apps Script URL into APPS_SCRIPT_URL in App.jsx and redeploy.':"Logs saving to coach's Google Sheet automatically."}</div>
+            <div style={{fontWeight:700,fontSize:16,marginBottom:6,color:APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'?RED:GREEN}}>{APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'?'⚠ Not connected to Google Sheets':'✓ Connected to Google Sheets'}</div>
+            <div style={{...T.small}}>{APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'?'Paste your Apps Script URL into APPS_SCRIPT_URL in App.jsx and redeploy.':"Logs saving to coach's Google Sheet automatically."}</div>
           </Card>
           <button onClick={()=>{setCoachUnlocked(false);setView('log')}} style={{width:'100%',marginTop:8,background:CREAM,border:'1.5px solid rgba(28,43,58,0.18)',borderRadius:12,padding:'15px',color:'#718096',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:17,textTransform:'uppercase',letterSpacing:'0.06em',cursor:'pointer'}}>← Exit Coach Mode</button>
         </div>
