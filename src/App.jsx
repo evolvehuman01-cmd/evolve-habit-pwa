@@ -1664,7 +1664,7 @@ export default function App() {
 
   // ── FIX 3: fetchData — graphDays in dep array ensures refetch on tab change AND day switch ──
   const fetchData=useCallback(async()=>{
-    if(!client||APPS_SCRIPT_URL==='YOUR_APPS_SCRIPT_WEB_APP_URL_HERE')return
+    if(!client||APPS_SCRIPT_URL==='https://script.google.com/macros/s/AKfycbwjmZnSgmGmAJJHzldLeqttCTjENThY5Q5pq5S4dM3ppjcFUDpRor6883bnfvJ9BwF2/exec')return
     setLoadingGraphs(true)
     const clientId = client.name.trim().toLowerCase().replace(/\s+/g,'-')
     try{
