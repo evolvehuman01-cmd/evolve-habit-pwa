@@ -1725,16 +1725,18 @@ export default function App() {
   // Fix 6: check-in with offline queuing and error feedback
   const handleCheckIn=async(data)=>{
     if(CHECKIN_SCRIPT_URL==='YOUR_CHECKIN_APPS_SCRIPT_URL_HERE')return
+    const clientId = data.client?.name?.trim().toLowerCase().replace(/\s+/g,'-') || 'unknown'
+    const payload = { ...data, clientId }
     if(!navigator.onLine){
       // Queue check-in for retry when back online
-      queueLog(data, CHECKIN_SCRIPT_URL)
+      queueLog(payload, CHECKIN_SCRIPT_URL)
       return
     }
     try{
-      await fetch(CHECKIN_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+      await fetch(CHECKIN_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
     }catch{
       // If fetch fails, queue it
-      queueLog(data, CHECKIN_SCRIPT_URL)
+      queueLog(payload, CHECKIN_SCRIPT_URL)
     }
   }
 
