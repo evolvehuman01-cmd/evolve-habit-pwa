@@ -218,7 +218,7 @@ function ClientDetail({ clientId, name, onTargets }) {
   if (loading) return <LoadingState />;
   if (error)   return <ErrorState msg={error} />;
 
-  const { logs, checkins, targets, streak, lastLogDate, daysSinceLog } = data;
+  const { logs, checkins, targets, streak, lastLogDate, daysSinceLog, clientEmail } = data;
 
   return (
     <div style={S.detailShell}>
@@ -256,7 +256,7 @@ function ClientDetail({ clientId, name, onTargets }) {
           targets={targets}
           clientId={clientId}
           clientName={name}
-          clientEmail={checkins.length > 0 ? (checkins[0]['Client Email'] || '') : ''}
+          clientEmail={clientEmail || ''}
         />
       )}
     </div>
