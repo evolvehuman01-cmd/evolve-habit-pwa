@@ -711,6 +711,73 @@ function MonthlyCheckinSummary({ answers }) {
   )
 }
 
+// ── COACH REPORT CARD (client-facing) ────────────────────────────
+// Shows the latest report the coach has sent for the matching period.
+// Distinct from WeeklyReportCard (local data) and WeeklyCheckinSummary (check-in answers).
+function CoachReportCard({ report, clientTargets, type }) {
+  if (!report) return null
+
+  const t = { ...DEFAULT_TARGETS, ...(clientTargets || {}) }
+
+  const REPORT_HABITS = [
+    { key: 'Sleep Avg',     label: 'Sleep',     unit: 'h',   targetKey: 'sleep',     invert: false },
+    { key: 'Steps Avg',     label: 'Steps',     unit: '',    targetKey: 'steps',     invert: false },
+    { key: 'Hydration Avg', label: 'Hydration', unit: 'L',   targetKey: 'hydration', invert: false },
+    { key: 'Stress Avg',    label: 'Stress',    unit: '/10', targetKey: 'stress',    invert: true  },
+    { key: 'Mood Avg',      label: 'Mood',      unit: '/10', targetKey: 'mood',      invert: false },
+    { key: 'Energy Avg',    label: 'Energy',    unit: '/10', targetKey: 'energy',    invert: false },
+  ]
+
+  // Same thresholds as WeeklyReportCard: >= target = green, >= 80% = amber, else red; inverted for stress
+  const getStatus = (avg, target, invert) => {
+    if (avg == null || avg === '') return 'none'
+    const n = parseFloat(avg), tgt = parseFloat(target)
+    if (isNaN(n) || isNaN(tgt) || tgt === 0) return 'none'
+    if (invert) return n <= tgt ? 'green' : n <= tgt * 1.2 ? 'amber' : 'red'
+    return n >= tgt ? 'green' : n >= tgt * 0.8 ? 'amber' : 'red'
+  }
+
+  const sc  = { green: GREEN, amber: AMBER, red: RED, none: '#cbd5e0' }
+  const sbg = { green: GREEN_LIGHT, amber: AMBER_LIGHT, red: RED_LIGHT, none: CREAM }
+
+  const heading    = type === 'monthly' ? 'Your Monthly Report' : 'Your Weekly Report'
+  const superLabel = type === 'monthly' ? 'Monthly Report' : 'Weekly Report'
+
+  return (
+    <div style={{ background: WHITE, borderRadius: 14, marginBottom: 14, border: '1px solid rgba(28,43,58,0.1)', boxShadow: '0 1px 4px rgba(28,43,58,0.07)', overflow: 'hidden' }}>
+      <div style={{ background: NAVY, padding: '14px 18px' }}>
+        <div style={{ ...T.super, color: ORANGE, marginBottom: 2 }}>{superLabel}</div>
+        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 22, color: WHITE, textTransform: 'uppercase' }}>{heading}</div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, background: 'rgba(28,43,58,0.08)' }}>
+        {REPORT_HABITS.map(h => {
+          const avg    = report[h.key]
+          const status = getStatus(avg, t[h.targetKey], h.invert)
+          const display = avg != null && avg !== ''
+            ? (h.key === 'Steps Avg'
+                ? Math.round(parseFloat(avg)).toLocaleString()
+                : parseFloat(avg).toFixed(1)) + h.unit
+            : '—'
+          return (
+            <div key={h.key} style={{ background: sbg[status], padding: '12px 8px', textAlign: 'center' }}>
+              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 20, color: sc[status] }}>{display}</div>
+              <div style={{ ...T.tiny, marginTop: 2, fontSize: 12 }}>{h.label}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      {report['Report Note'] && (
+        <div style={{ padding: '16px 18px', background: CREAM }}>
+          <div style={{ ...T.super, fontSize: 13, marginBottom: 8 }}>A note from your coach</div>
+          <div style={{ fontSize: 16, color: '#2d3748', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{report['Report Note']}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── CHECK-IN CARD ─────────────────────────────────────────
 function CheckInCard({ type, questions, onSubmit, client }) {
   const [answers,  setAnswers]  = useState({})
@@ -1523,6 +1590,8 @@ export default function App() {
   const [retroLogDay,     setRetroLogDay]     = useState(null)  // for RetroLogModal
   const [editMode,        setEditMode]        = useState(false) // edit after send
   const [exportDone,      setExportDone]      = useState(false)
+  const [weeklyReport,    setWeeklyReport]    = useState(null)
+  const [monthlyReport,   setMonthlyReport]   = useState(null)
 
   const tapCount = useRef(0), tapTimer = useRef(null)
   const todayKey  = todayISO()
@@ -1675,8 +1744,21 @@ export default function App() {
     }catch{ setHistoricData([]) }
     setLoadingGraphs(false)
   },[client,graphDays])
+  const fetchReports = useCallback(async () => {
+    if (!client) return
+    const clientId = client.name.trim().toLowerCase().replace(/\s+/g, '-')
+    try {
+      const [wRes, mRes] = await Promise.all([
+        fetch(`${CHECKIN_SCRIPT_URL}?action=getLatestReport&clientId=${encodeURIComponent(clientId)}&type=weekly`).then(r => r.json()),
+        fetch(`${CHECKIN_SCRIPT_URL}?action=getLatestReport&clientId=${encodeURIComponent(clientId)}&type=monthly`).then(r => r.json()),
+      ])
+      setWeeklyReport(wRes.report || null)
+      setMonthlyReport(mRes.report || null)
+    } catch { /* silent fail — report cards are non-critical */ }
+  }, [client])
+
   // FIX 3: fire on view change AND when graphDays changes while on progress tab
-  useEffect(()=>{if(view==='progress')fetchData()},[view,graphDays,fetchData])
+  useEffect(()=>{if(view==='progress'){fetchData();fetchReports()}},[view,graphDays,fetchData,fetchReports])
 
   const handleSend=async()=>{
     if(sendStatus==='sending')return
@@ -1725,6 +1807,9 @@ export default function App() {
   // Fix 6: check-in with offline queuing and error feedback
   const handleCheckIn=async(data)=>{
     if(CHECKIN_SCRIPT_URL==='YOUR_CHECKIN_APPS_SCRIPT_URL_HERE')return
+    // Store submittedAt locally so the client-side report card can match against its period
+    if(data.type==='weekly')  LS.set('checkin_weekly_last_submittedAt',  data.submittedAt)
+    if(data.type==='monthly') LS.set('checkin_monthly_last_submittedAt', data.submittedAt)
     const clientId = data.client?.name?.trim().toLowerCase().replace(/\s+/g,'-') || 'unknown'
     const payload = { ...data, clientId }
     if(!navigator.onLine){
@@ -2003,6 +2088,14 @@ export default function App() {
 
           {/* Weekly summary at top of Progress */}
           <WeeklyReportCard data={weekData} clientTargets={clientTargets}/>
+
+          {/* Coach report cards — shown when a report exists for the current period */}
+          {weeklyReport && weeklyReport['Period Identifier'] === LS.get('checkin_weekly_last_submittedAt') && (
+            <CoachReportCard report={weeklyReport} clientTargets={clientTargets} type="weekly" />
+          )}
+          {monthlyReport && monthlyReport['Period Identifier'] === LS.get('checkin_monthly_last_submittedAt') && (
+            <CoachReportCard report={monthlyReport} clientTargets={clientTargets} type="monthly" />
+          )}
 
           {/* Calendar — tappable */}
           <HabitCalendar visibleHabits={visibleHabits} onDayTap={(day,status)=>{

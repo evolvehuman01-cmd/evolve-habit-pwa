@@ -5,9 +5,10 @@
 // ─────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback } from 'react';
 
-const COACH_SECRET  = import.meta.env.VITE_COACH_SECRET;
-const DATA_SCRIPT   = import.meta.env.VITE_DATA_SCRIPT_URL;
-const CONFIG_VALID  = !!COACH_SECRET && !!DATA_SCRIPT;
+const COACH_SECRET   = import.meta.env.VITE_COACH_SECRET;
+const DATA_SCRIPT    = import.meta.env.VITE_DATA_SCRIPT_URL;
+const CHECKIN_SCRIPT = import.meta.env.VITE_CHECKIN_SCRIPT_URL;
+const CONFIG_VALID   = !!COACH_SECRET && !!DATA_SCRIPT;
 
 // ── Utility ──────────────────────────────────────────────────────
 function scriptUrl(params) {
@@ -30,6 +31,17 @@ async function apiPost(body) {
     mode: 'no-cors',
     headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ ...body, secret: COACH_SECRET })
+  });
+  return { success: true };
+}
+
+async function checkinPost(body) {
+  if (!CHECKIN_SCRIPT) throw new Error('VITE_CHECKIN_SCRIPT_URL is not set — add it to Vercel environment variables.');
+  await fetch(CHECKIN_SCRIPT, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(body),
   });
   return { success: true };
 }
@@ -237,7 +249,16 @@ function ClientDetail({ clientId, name, onTargets }) {
       {/* Tab content */}
       {tab === 'overview'  && <OverviewTab logs={logs} targets={targets} />}
       {tab === 'logs'      && <LogsTab logs={logs} />}
-      {tab === 'checkins'  && <CheckinsTab checkins={checkins} />}
+      {tab === 'checkins'  && (
+        <CheckinsTab
+          checkins={checkins}
+          logs={logs}
+          targets={targets}
+          clientId={clientId}
+          clientName={name}
+          clientEmail={checkins.length > 0 ? (checkins[0]['Client Email'] || '') : ''}
+        />
+      )}
     </div>
   );
 }
@@ -339,6 +360,209 @@ function HabitAverages({ logs, targets }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────
+// REPORT HELPERS
+// ─────────────────────────────────────────────────────────────────
+
+// Maps sheet column keys to targets object keys (shared with HabitAverages)
+const TARGET_KEY_MAP = {
+  'Sleep (hrs)': 'sleep', 'Steps': 'steps', 'Hydration (L)': 'hydration',
+  'Meals': 'meals', 'Mindfulness (min)': 'mindfulness', 'Mobility (min)': 'mobility',
+  'Stress RPE (1-10)': 'stress', 'Mood (1-10)': 'mood',
+  'Energy (1-10)': 'energy', 'Digestion (1-10)': 'digestion',
+};
+
+// Averages over the 7-day window ending on (and including) the check-in's submittedAt date.
+// This is the correct window for reports — NOT the rolling-30-day window used in HabitAverages.
+function calcPeriodAverages(logs, submittedAt) {
+  if (!submittedAt) return { sleep: null, steps: null, hydration: null, stress: null, mood: null, energy: null, completion: null };
+
+  const end   = new Date(submittedAt);
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setDate(end.getDate() - 6);
+  start.setHours(0, 0, 0, 0);
+
+  const periodLogs = logs.filter(l => {
+    const dateVal = l['Date'] || l['date'];
+    if (!dateVal) return false;
+    const d = new Date(typeof dateVal === 'string' ? dateVal.split('T')[0] : dateVal);
+    return d >= start && d <= end;
+  });
+
+  const avg = (colKey) => {
+    const vals = periodLogs.map(l => parseFloat(l[colKey])).filter(v => !isNaN(v));
+    return vals.length ? parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1)) : null;
+  };
+
+  const completionVals = periodLogs.map(l => parseFloat(l['Completion %'])).filter(v => !isNaN(v));
+  const completion = completionVals.length
+    ? parseFloat((completionVals.reduce((a, b) => a + b, 0) / completionVals.length).toFixed(1))
+    : null;
+
+  return {
+    sleep:      avg('Sleep (hrs)'),
+    steps:      avg('Steps'),
+    hydration:  avg('Hydration (L)'),
+    stress:     avg('Stress RPE (1-10)'),
+    mood:       avg('Mood (1-10)'),
+    energy:     avg('Energy (1-10)'),
+    completion,
+  };
+}
+
+// Same threshold logic as WeeklyReportCard getStatus() in App.jsx:
+// >= target = green, >= 80% of target = amber, else red; inverted for stress.
+function getReportStatus(avg, target, invert) {
+  if (avg === null || avg === undefined) return 'none';
+  const n = Number(avg), t = Number(target);
+  if (isNaN(n) || isNaN(t) || t === 0) return 'none';
+  if (invert) return n <= t ? 'green' : n <= t * 1.2 ? 'amber' : 'red';
+  return n >= t ? 'green' : n >= t * 0.8 ? 'amber' : 'red';
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SEND REPORT PANEL — expands inside each check-in row
+// ─────────────────────────────────────────────────────────────────
+function SendReportPanel({ checkin, logs, targets, clientId, clientName, clientEmail, type }) {
+  const [note,   setNote]   = useState('');
+  const [status, setStatus] = useState('idle'); // 'idle' | 'sending' | 'sent' | 'error'
+
+  const periodIdentifier = checkin['Submitted At'] || '';
+  const avgs = calcPeriodAverages(logs, periodIdentifier);
+
+  const REPORT_HABITS = [
+    { key: 'sleep',     label: 'Sleep',     unit: 'h',   invert: false },
+    { key: 'steps',     label: 'Steps',     unit: '',    invert: false },
+    { key: 'hydration', label: 'Hydration', unit: 'L',   invert: false },
+    { key: 'stress',    label: 'Stress',    unit: '/10', invert: true  },
+    { key: 'mood',      label: 'Mood',      unit: '/10', invert: false },
+    { key: 'energy',    label: 'Energy',    unit: '/10', invert: false },
+  ];
+
+  const statusColour = { green: '#22c55e', amber: '#F26419', red: '#ef4444', none: '#64748b' };
+
+  const handleSend = async () => {
+    if (!note.trim() || status !== 'idle') return;
+    setStatus('sending');
+    try {
+      await checkinPost({
+        action:          'sendReport',
+        secret:          COACH_SECRET,
+        type,
+        clientId,
+        clientName,
+        clientEmail,
+        periodIdentifier,
+        reportNote:      note.trim(),
+        habitAverages:   avgs,
+        targets: {
+          sleep:     targets?.sleep,
+          steps:     targets?.steps,
+          hydration: targets?.hydration,
+          stress:    targets?.stress,
+          mood:      targets?.mood,
+          energy:    targets?.energy,
+        },
+      });
+      setStatus('sent');
+    } catch(err) {
+      console.error('Send report failed:', err);
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 3000);
+    }
+  };
+
+  const dateLabel = periodIdentifier ? periodIdentifier.split('T')[0] : 'unknown date';
+
+  if (!CHECKIN_SCRIPT) {
+    return (
+      <div style={{ marginTop: 12, borderTop: '1px solid #2a3a4a', paddingTop: 12 }}>
+        <p style={S.errorMsg}>
+          ⚠ VITE_CHECKIN_SCRIPT_URL is not set. Add it to your Vercel environment variables and redeploy.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 12, borderTop: '1px solid #2a3a4a', paddingTop: 12 }}>
+      {/* Period averages preview */}
+      <p style={{ ...S.sectionTitle, marginTop: 0, marginBottom: 10 }}>
+        Period averages — 7 days to {dateLabel}
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 14 }}>
+        {REPORT_HABITS.map(h => {
+          const avg    = avgs[h.key];
+          const tgt    = targets?.[h.key];
+          const st     = getReportStatus(avg, tgt, h.invert);
+          const col    = statusColour[st];
+          const display = avg !== null
+            ? (h.key === 'steps' ? Math.round(avg).toLocaleString() : avg) + h.unit
+            : '—';
+          return (
+            <div key={h.key} style={{ background: '#0f1a24', borderRadius: 6, padding: '8px 6px', textAlign: 'center' }}>
+              <div style={{ fontFamily: '"Barlow Condensed", sans-serif', fontWeight: 900, fontSize: 17, color: col }}>{display}</div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{h.label}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Note textarea */}
+      <label style={{ ...S.fieldLabel, display: 'block', marginBottom: 6 }}>Your note to client</label>
+      <textarea
+        value={note}
+        onChange={e => setNote(e.target.value)}
+        placeholder="Write your report note for this client..."
+        rows={5}
+        disabled={status === 'sent'}
+        style={{
+          ...S.input,
+          width: '100%',
+          boxSizing: 'border-box',
+          resize: 'vertical',
+          lineHeight: 1.6,
+          opacity: status === 'sent' ? 0.6 : 1,
+        }}
+      />
+
+      {status === 'error' && (
+        <p style={{ ...S.errorMsg, marginTop: 6 }}>
+          Send failed — check VITE_CHECKIN_SCRIPT_URL is deployed and the Apps Script is published.
+        </p>
+      )}
+
+      <button
+        onClick={handleSend}
+        disabled={!note.trim() || status !== 'idle'}
+        style={{
+          ...S.btnPrimary,
+          marginTop: 10,
+          width: '100%',
+          opacity: (!note.trim() || status !== 'idle') ? 0.5 : 1,
+          cursor:  (!note.trim() || status !== 'idle') ? 'not-allowed' : 'pointer',
+          background: status === 'sent' ? '#22c55e' : '#F26419',
+          padding: '10px 16px',
+          textAlign: 'center',
+        }}
+      >
+        {status === 'idle'    && 'Send Report + Email →'}
+        {status === 'sending' && 'Sending…'}
+        {status === 'sent'    && '✓ Report Sent'}
+        {status === 'error'   && 'Send Report + Email →'}
+      </button>
+
+      {status === 'sent' && (
+        <p style={{ fontSize: 12, color: '#22c55e', marginTop: 6, textAlign: 'center' }}>
+          Logged to Report Log and email sent to {clientEmail || 'client'}.
+          Re-open to send a revised version.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Logs tab: raw log table ───────────────────────────────────────
 function LogsTab({ logs }) {
   const sorted = [...logs].sort((a,b) => (b['Date']||b.date||'').localeCompare(a['Date']||a.date||''));
@@ -365,23 +589,61 @@ function LogsTab({ logs }) {
 }
 
 // ── Check-ins tab ─────────────────────────────────────────────────
-function CheckinsTab({ checkins }) {
-  const sorted = [...checkins].sort((a,b) => (b['Date']||b.date||'').localeCompare(a['Date']||a.date||''));
+function CheckinsTab({ checkins, logs, targets, clientId, clientName, clientEmail }) {
+  const [expandedIdx, setExpandedIdx] = useState(null);
+
+  const sorted = [...checkins].sort((a, b) =>
+    (b['Submitted At'] || b['Date'] || b.date || '').localeCompare(
+      a['Submitted At'] || a['Date'] || a.date || ''
+    )
+  );
   if (!sorted.length) return <p style={S.emptyText}>No check-ins submitted yet.</p>;
+
+  const HIDDEN_KEYS = ['clientId', 'date', 'type', 'Client ID', 'Client Name',
+                       'Submitted At', 'clientName', 'Client Email'];
 
   return (
     <div>
-      {sorted.map((c, i) => (
-        <div key={i} style={S.checkinCard}>
-          <p style={S.checkinDate}>{c['Date']||c.date||'No date'} · {c.type || c['Type'] || 'check-in'}</p>
-          {Object.entries(c)
-            .filter(([k]) => !['clientId','date','type','Client ID','Client Name','Submitted At','clientName'].includes(k))
-            .map(([k, v]) => (
-              <p key={k} style={S.checkinRow}><strong>{k}:</strong> {String(v)}</p>
-            ))
-          }
-        </div>
-      ))}
+      {sorted.map((c, i) => {
+        const type      = (c.type || c['Type'] || 'weekly').toLowerCase();
+        const dateLabel = c['Submitted At']
+          ? c['Submitted At'].split('T')[0]
+          : (c['Date'] || c.date || 'No date');
+        const isExpanded = expandedIdx === i;
+
+        return (
+          <div key={i} style={S.checkinCard}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <p style={{ ...S.checkinDate, margin: 0 }}>{dateLabel} · {type}</p>
+              <button
+                style={{ ...S.btnSecondary, fontSize: 12, padding: '4px 12px' }}
+                onClick={() => setExpandedIdx(isExpanded ? null : i)}
+              >
+                {isExpanded ? 'Close' : 'Send Report'}
+              </button>
+            </div>
+
+            {Object.entries(c)
+              .filter(([k]) => !HIDDEN_KEYS.includes(k))
+              .map(([k, v]) => (
+                <p key={k} style={S.checkinRow}><strong>{k}:</strong> {String(v)}</p>
+              ))
+            }
+
+            {isExpanded && (
+              <SendReportPanel
+                checkin={c}
+                logs={logs}
+                targets={targets}
+                clientId={clientId}
+                clientName={clientName}
+                clientEmail={clientEmail}
+                type={type}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
