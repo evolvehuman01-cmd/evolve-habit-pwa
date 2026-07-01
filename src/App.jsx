@@ -2089,11 +2089,11 @@ export default function App() {
           {/* Weekly summary at top of Progress */}
           <WeeklyReportCard data={weekData} clientTargets={clientTargets}/>
 
-          {/* Coach report cards — shown when a report exists for the current period */}
-          {weeklyReport && weeklyReport['Period Identifier'] === LS.get('checkin_weekly_last_submittedAt') && (
+          {/* Coach report cards — shown whenever a report exists */}
+          {weeklyReport && (
             <CoachReportCard report={weeklyReport} clientTargets={clientTargets} type="weekly" />
           )}
-          {monthlyReport && monthlyReport['Period Identifier'] === LS.get('checkin_monthly_last_submittedAt') && (
+          {monthlyReport && (
             <CoachReportCard report={monthlyReport} clientTargets={clientTargets} type="monthly" />
           )}
 
