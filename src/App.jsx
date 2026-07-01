@@ -743,11 +743,27 @@ function CoachReportCard({ report, clientTargets, type }) {
   const heading    = type === 'monthly' ? 'Your Monthly Report' : 'Your Weekly Report'
   const superLabel = type === 'monthly' ? 'Monthly Report' : 'Weekly Report'
 
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const periodDate = report['Period Identifier'] ? new Date(report['Period Identifier']) : null
+  let dateLabel = ''
+  if (periodDate && !isNaN(periodDate)) {
+    if (type === 'monthly') {
+      dateLabel = MONTHS[periodDate.getMonth()] + ' ' + periodDate.getFullYear()
+    } else {
+      const dateTo   = new Date(periodDate)
+      const dateFrom = new Date(periodDate)
+      dateFrom.setDate(dateTo.getDate() - 6)
+      const fmt = d => d.getDate() + ' ' + MONTHS[d.getMonth()].slice(0,3)
+      dateLabel = fmt(dateFrom) + ' – ' + fmt(dateTo)
+    }
+  }
+
   return (
     <div style={{ background: WHITE, borderRadius: 14, marginBottom: 14, border: '1px solid rgba(28,43,58,0.1)', boxShadow: '0 1px 4px rgba(28,43,58,0.07)', overflow: 'hidden' }}>
       <div style={{ background: NAVY, padding: '14px 18px' }}>
         <div style={{ ...T.super, color: ORANGE, marginBottom: 2 }}>{superLabel}</div>
         <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 900, fontSize: 22, color: WHITE, textTransform: 'uppercase' }}>{heading}</div>
+        {dateLabel && <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 4 }}>{dateLabel}</div>}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, background: 'rgba(28,43,58,0.08)' }}>
