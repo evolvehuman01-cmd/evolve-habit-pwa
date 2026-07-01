@@ -325,20 +325,29 @@ function HabitAverages({ logs, targets }) {
     { key: 'Digestion (1-10)',  label: 'Digestion',   unit: '/10' },
   ];
 
+  // Map column header key back to targets object key for reference line
+  const TARGET_KEY_MAP = {
+    'Sleep (hrs)': 'sleep', 'Steps': 'steps', 'Hydration (L)': 'hydration',
+    'Meals': 'meals', 'Mindfulness (min)': 'mindfulness', 'Mobility (min)': 'mobility',
+    'Stress RPE (1-10)': 'stress', 'Mood (1-10)': 'mood',
+    'Energy (1-10)': 'energy', 'Digestion (1-10)': 'digestion',
+  };
+
+  const activeHabits = targets?.activeHabits;
+  const activeSet = activeHabits
+    ? new Set(typeof activeHabits === 'string' ? activeHabits.split(',').map(s => s.trim()).filter(Boolean) : activeHabits)
+    : null;
+  const visibleHabits = activeSet
+    ? HABITS.filter(({ key }) => activeSet.has(TARGET_KEY_MAP[key]))
+    : HABITS;
+
   const recent = logs.slice(-30);
 
   return (
     <div style={S.habitGrid}>
-      {HABITS.map(({ key, label, unit }) => {
+      {visibleHabits.map(({ key, label, unit }) => {
         const vals = recent.map(l => parseFloat(l[key])).filter(v => !isNaN(v));
         const avg  = vals.length ? (vals.reduce((a,b) => a+b, 0) / vals.length).toFixed(1) : '—';
-        // Map column header key back to targets object key for reference line
-        const TARGET_KEY_MAP = {
-          'Sleep (hrs)': 'sleep', 'Steps': 'steps', 'Hydration (L)': 'hydration',
-          'Meals': 'meals', 'Mindfulness (min)': 'mindfulness', 'Mobility (min)': 'mobility',
-          'Stress RPE (1-10)': 'stress', 'Mood (1-10)': 'mood',
-          'Energy (1-10)': 'energy', 'Digestion (1-10)': 'digestion',
-        };
         const targetKey = TARGET_KEY_MAP[key];
         const target = targets?.[targetKey];
         const pct  = target && avg !== '—' ? Math.min(100, (parseFloat(avg) / parseFloat(target)) * 100) : null;

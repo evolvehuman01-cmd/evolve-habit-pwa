@@ -275,8 +275,8 @@ const PrideBand = ({h=6}) => (
 )
 
 // ── SHARED UI ─────────────────────────────────────────────
-const Card = ({children,style={}}) => (
-  <div style={{background:WHITE,borderRadius:14,padding:18,marginBottom:12,border:'1px solid rgba(28,43,58,0.1)',boxShadow:'0 1px 4px rgba(28,43,58,0.07)',...style}}>{children}</div>
+const Card = ({children,style={},onClick}) => (
+  <div onClick={onClick} style={{background:WHITE,borderRadius:14,padding:18,marginBottom:12,border:'1px solid rgba(28,43,58,0.1)',boxShadow:'0 1px 4px rgba(28,43,58,0.07)',...style}}>{children}</div>
 )
 const SL = ({children}) => (
   <div style={{...T.super,borderBottom:'1.5px solid rgba(28,43,58,0.1)',paddingBottom:9,marginTop:24,marginBottom:14}}>{children}</div>
@@ -1204,8 +1204,8 @@ function DayDetailModal({ date, visibleHabits, onClose }) {
                 {visibleHabits.map(h=>{
                   const val = log.habits?.[h.id]
                   const filled = val!==undefined&&val!==''&&val!==null
-                  const col = filled ? (Number(val)>=h.green?GREEN:Number(val)>=h.amber?AMBER:RED) : '#cbd5e0'
-                  const bg  = filled ? (Number(val)>=h.green?GREEN_LIGHT:Number(val)>=h.amber?AMBER_LIGHT:RED_LIGHT) : CREAM
+                  const col = filled ? habitColor(h,val) : '#cbd5e0'
+                  const bg  = filled ? habitBg(h,val) : CREAM
                   return (
                     <div key={h.id} style={{background:bg,border:`1.5px solid ${col}44`,borderRadius:10,padding:'12px 14px'}}>
                       <div style={{fontSize:20,marginBottom:4}}>{h.icon}</div>
