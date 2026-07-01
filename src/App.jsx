@@ -76,6 +76,7 @@ const DEFAULT_TARGETS = {
   workout: 1,
   breathwork: 1,
   pace: 50,
+  calories: 2000,
 }
 
 // ── HABITS — targets applied dynamically from coach ───────
@@ -89,6 +90,7 @@ const ALL_HABITS = [
   { id:'workout',     label:'Workout',       icon:'💪', desc:'Did you work out today?',           unit:'',      min:0, max:1,     step:1,   autoFill:null,  type:'checkbox' },
   { id:'breathwork',  label:'Breathwork',    icon:'🫁', desc:'Breathwork protocol completed today', unit:'',      min:0, max:1,     step:1,   autoFill:null,  type:'checkbox' },
   { id:'pace',        label:'Pace Points',   icon:'🌡️', desc:'Total pace points used today',        unit:'pts',   min:0, max:100,   step:1,   autoFill:null,  invert:true },
+  { id:'calories',    label:'Calories',      icon:'🔥', desc:'Total calories consumed today',       unit:'kcal',  min:0, max:6000,  step:50,  autoFill:null,  mode:'band', bandPercent:10, amberBandPercent:15 },
 ]
 
 // Coerce target values to clean numbers — coach-set targets can arrive as
@@ -241,7 +243,7 @@ const getStreaks = () => ({ ls:LS.get('streak_log',{count:0,lastDate:null,best:0
 function updateStreaks(habitValues, visibleHabits) {
   const today=todayISO(), yest=yesterday()
   const hasLogged  = Object.values(habitValues).some(v=>v!==''&&v!==undefined&&v!==null)
-  const greenCount = visibleHabits.filter(h=>h.type==='checkbox'?habitValues[h.id]===1:h.invert?Number(habitValues[h.id]||0)<=h.green:Number(habitValues[h.id]||0)>=h.green).length
+  const greenCount = visibleHabits.filter(h=>isHabitGreen(h,habitValues[h.id])).length
   const onTarget   = greenCount>=Math.ceil(visibleHabits.length*0.6)
 
   let ls=LS.get('streak_log',{count:0,lastDate:null,best:0})
@@ -270,8 +272,26 @@ function wasMissed() {
 }
 
 // ── COLOUR HELPERS ────────────────────────────────────────
-const habitColor = (h,v) => { if(v===''||v===null||v===undefined) return '#cbd5e0'; const n=Number(v); if(h.invert) return n<=h.green?GREEN:n<=h.amber?AMBER:RED; return n>=h.green?GREEN:n>=h.amber?AMBER:RED }
-const habitBg    = (h,v) => { if(v===''||v===null||v===undefined) return WHITE; const n=Number(v); if(h.invert) return n<=h.green?GREEN_LIGHT:n<=h.amber?AMBER_LIGHT:RED_LIGHT; return n>=h.green?GREEN_LIGHT:n>=h.amber?AMBER_LIGHT:RED_LIGHT }
+// Band-mode habits (e.g. calories) are "good" when close to target in either
+// direction, unlike threshold-mode habits where hitting/exceeding green is good
+// regardless of margin. Returns 'green' | 'amber' | 'red'.
+const bandStatus = (h,n) => {
+  const greenPct = h.bandPercent ?? 10
+  const amberPct = h.amberBandPercent ?? greenPct*2
+  const distPct  = Math.abs(n - h.target) / h.target * 100
+  return distPct<=greenPct ? 'green' : distPct<=amberPct ? 'amber' : 'red'
+}
+// Single source of truth for whether a logged value counts as "met" — used by
+// habitColor/habitBg and by every green-count/streak calculation below.
+const isHabitGreen = (h,v) => {
+  if (v===''||v===null||v===undefined) return false
+  if (h.type==='checkbox') return v===1
+  const n = Number(v)
+  if (h.mode==='band') return bandStatus(h,n)==='green'
+  return h.invert ? n<=h.green : n>=h.green
+}
+const habitColor = (h,v) => { if(v===''||v===null||v===undefined) return '#cbd5e0'; const n=Number(v); if(h.mode==='band'){const s=bandStatus(h,n); return s==='green'?GREEN:s==='amber'?AMBER:RED} if(h.invert) return n<=h.green?GREEN:n<=h.amber?AMBER:RED; return n>=h.green?GREEN:n>=h.amber?AMBER:RED }
+const habitBg    = (h,v) => { if(v===''||v===null||v===undefined) return WHITE; const n=Number(v); if(h.mode==='band'){const s=bandStatus(h,n); return s==='green'?GREEN_LIGHT:s==='amber'?AMBER_LIGHT:RED_LIGHT} if(h.invert) return n<=h.green?GREEN_LIGHT:n<=h.amber?AMBER_LIGHT:RED_LIGHT; return n>=h.green?GREEN_LIGHT:n>=h.amber?AMBER_LIGHT:RED_LIGHT }
 const metricColor = (m,v) => { const n=Number(v??5); if(m.invert){return n<=5?GREEN:n<=7?AMBER:RED} return n>=7?GREEN:n>=5?AMBER:RED }
 
 // ── PRIDE BAND ────────────────────────────────────────────
@@ -428,7 +448,7 @@ function HabitCalendar({ visibleHabits, onDayTap }) {
     const log=LS.get(`log_${key}`)
     let status='none'
     if (log) {
-      const gc=visibleHabits.filter(h=>h.type==='checkbox'?log.habits?.[h.id]===1:h.invert?Number(log.habits?.[h.id]||0)<=h.green:Number(log.habits?.[h.id]||0)>=h.green).length
+      const gc=visibleHabits.filter(h=>isHabitGreen(h,log.habits?.[h.id])).length
       const pct=visibleHabits.length?gc/visibleHabits.length:0
       status=pct>=0.8?'green':pct>=0.5?'amber':'red'
     }
@@ -1513,6 +1533,7 @@ function SettingsScreen({ client, clientTargets, targetSource, visibleHabits, ex
             {label:'Meals',       value:clientTargets.meals+' meals',                  icon:'🥗'},
             {label:'Mindfulness', value:clientTargets.mindfulness+'min',               icon:'🧠'},
             {label:'Mobility',    value:clientTargets.mobility+'min',                  icon:'🧘'},
+            {label:'Calories',    value:Number(clientTargets.calories).toLocaleString()+'kcal', icon:'🔥'},
           ].map(t=>(
             <div key={t.label} style={{background:CREAM,borderRadius:9,padding:'10px 12px',display:'flex',alignItems:'center',gap:8}}>
               <span style={{fontSize:16}}>{t.icon}</span>
@@ -1622,7 +1643,7 @@ export default function App() {
 
   const visibleHabits   = buildHabitsWithTargets(clientTargets).filter(h=>activeHabits.includes(h.id))
   const completedHabits = visibleHabits.filter(h=>habitValues[h.id]!==undefined&&habitValues[h.id]!==''&&habitValues[h.id]!==null)
-  const allGreen        = visibleHabits.length>0 && visibleHabits.every(h=>h.type==='checkbox'?habitValues[h.id]===1:h.invert?Number(habitValues[h.id]||0)<=h.green:Number(habitValues[h.id]||0)>=h.green)
+  const allGreen        = visibleHabits.length>0 && visibleHabits.every(h=>isHabitGreen(h,habitValues[h.id]))
 
   // ── Boot ───────────────────────────────────────────────
   useEffect(()=>{

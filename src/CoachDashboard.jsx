@@ -319,6 +319,7 @@ function HabitAverages({ logs, targets }) {
     { key: 'Meals',             label: 'Meals',       unit: ''    },
     { key: 'Mindfulness (min)', label: 'Mindfulness', unit: 'min' },
     { key: 'Mobility (min)',    label: 'Mobility',    unit: 'min' },
+    { key: 'Calories (kcal)',   label: 'Calories',    unit: 'kcal', mode: 'band', bandPercent: 10, amberBandPercent: 15 },
     { key: 'Stress RPE (1-10)', label: 'Stress',      unit: '/10' },
     { key: 'Mood (1-10)',       label: 'Mood',        unit: '/10' },
     { key: 'Energy (1-10)',     label: 'Energy',      unit: '/10' },
@@ -329,6 +330,7 @@ function HabitAverages({ logs, targets }) {
   const TARGET_KEY_MAP = {
     'Sleep (hrs)': 'sleep', 'Steps': 'steps', 'Hydration (L)': 'hydration',
     'Meals': 'meals', 'Mindfulness (min)': 'mindfulness', 'Mobility (min)': 'mobility',
+    'Calories (kcal)': 'calories',
     'Stress RPE (1-10)': 'stress', 'Mood (1-10)': 'mood',
     'Energy (1-10)': 'energy', 'Digestion (1-10)': 'digestion',
   };
@@ -345,12 +347,30 @@ function HabitAverages({ logs, targets }) {
 
   return (
     <div style={S.habitGrid}>
-      {visibleHabits.map(({ key, label, unit }) => {
+      {visibleHabits.map(({ key, label, unit, mode, bandPercent, amberBandPercent }) => {
         const vals = recent.map(l => parseFloat(l[key])).filter(v => !isNaN(v));
         const avg  = vals.length ? (vals.reduce((a,b) => a+b, 0) / vals.length).toFixed(1) : '—';
         const targetKey = TARGET_KEY_MAP[key];
         const target = targets?.[targetKey];
-        const pct  = target && avg !== '—' ? Math.min(100, (parseFloat(avg) / parseFloat(target)) * 100) : null;
+        const pctOfTarget = target && avg !== '—' ? (parseFloat(avg) / parseFloat(target)) * 100 : null;
+
+        let pct = null, barColor = null;
+        if (pctOfTarget !== null) {
+          if (mode === 'band') {
+            // Band mode: close to 100% of target is good in either direction.
+            // Bar is scaled to a 0–200%-of-target range (target sits at the
+            // midpoint) so overshoot is visibly distinct from being on target,
+            // rather than both pinning the bar to a full 100% width.
+            const greenPct = bandPercent ?? 10;
+            const amberPct = amberBandPercent ?? greenPct * 2;
+            const distPct  = Math.abs(pctOfTarget - 100);
+            pct = Math.min(100, pctOfTarget / 2);
+            barColor = distPct <= greenPct ? '#22c55e' : distPct <= amberPct ? '#F26419' : '#ef4444';
+          } else {
+            pct = Math.min(100, pctOfTarget);
+            barColor = pct >= 100 ? '#22c55e' : pct >= 70 ? '#F26419' : '#ef4444';
+          }
+        }
 
         return (
           <div key={key} style={S.habitCard}>
@@ -359,7 +379,7 @@ function HabitAverages({ logs, targets }) {
             {target && <p style={S.habitTarget}>Target: {target}{unit}</p>}
             {pct !== null && (
               <div style={S.progressBar}>
-                <div style={{ ...S.progressFill, width: `${pct}%`, backgroundColor: pct >= 100 ? '#22c55e' : pct >= 70 ? '#F26419' : '#ef4444' }} />
+                <div style={{ ...S.progressFill, width: `${pct}%`, backgroundColor: barColor }} />
               </div>
             )}
           </div>
@@ -377,6 +397,7 @@ function HabitAverages({ logs, targets }) {
 const TARGET_KEY_MAP = {
   'Sleep (hrs)': 'sleep', 'Steps': 'steps', 'Hydration (L)': 'hydration',
   'Meals': 'meals', 'Mindfulness (min)': 'mindfulness', 'Mobility (min)': 'mobility',
+  'Calories (kcal)': 'calories',
   'Stress RPE (1-10)': 'stress', 'Mood (1-10)': 'mood',
   'Energy (1-10)': 'energy', 'Digestion (1-10)': 'digestion',
 };
@@ -676,6 +697,7 @@ function TargetEditor({ client, onSaved, onCancel }) {
     { id: 'workout',     label: 'Workout',        icon: '💪' },
     { id: 'breathwork',  label: 'Breathwork',     icon: '🫁' },
     { id: 'pace',        label: 'Pace Points',    icon: '🌡️' },
+    { id: 'calories',    label: 'Calories',       icon: '🔥' },
   ];
 
   const DEFAULT_ACTIVE = ['sleep','steps','hydration','meals','mindfulness'];
@@ -702,6 +724,7 @@ function TargetEditor({ client, onSaved, onCancel }) {
     { key: 'mindfulness', label: 'Mindfulness target (min)',    type: 'number', step: '1'   },
     { key: 'mobility',    label: 'Mobility target (min)',       type: 'number', step: '5'   },
     { key: 'pace',        label: 'Pace Points ceiling (0–100)', type: 'number', step: '1'   },
+    { key: 'calories',    label: 'Calorie target (kcal)',       type: 'number', step: '50'  },
     { key: 'stress',      label: 'Stress baseline (1–10)',      type: 'number', step: '1'   },
     { key: 'mood',        label: 'Mood baseline (1–10)',        type: 'number', step: '1'   },
     { key: 'energy',      label: 'Energy baseline (1–10)',      type: 'number', step: '1'   },
