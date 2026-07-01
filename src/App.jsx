@@ -91,9 +91,16 @@ const ALL_HABITS = [
   { id:'pace',        label:'Pace Points',   icon:'🌡️', desc:'Total pace points used today',        unit:'pts',   min:0, max:100,   step:1,   autoFill:null,  invert:true },
 ]
 
+// Coerce target values to clean numbers — coach-set targets can arrive as
+// formatted strings (e.g. "8,000" from a spreadsheet cell), which silently
+// break >= / * comparisons by producing NaN instead of throwing.
+const toNum = v => typeof v === 'string' ? Number(v.replace(/,/g,'')) : Number(v)
+
 // Merge static habit definitions with dynamic targets from coach
 function buildHabitsWithTargets(targets) {
-  const t = { ...DEFAULT_TARGETS, ...targets }
+  const merged = { ...DEFAULT_TARGETS, ...targets }
+  const t = { ...merged }
+  for (const key of Object.keys(DEFAULT_TARGETS)) t[key] = toNum(merged[key])
   return ALL_HABITS.map(h => ({
     ...h,
     target: t[h.id],
