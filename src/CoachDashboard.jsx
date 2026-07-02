@@ -324,6 +324,13 @@ function HabitAverages({ logs, targets }) {
     { key: 'Mood (1-10)',       label: 'Mood',        unit: '/10' },
     { key: 'Energy (1-10)',     label: 'Energy',      unit: '/10' },
     { key: 'Digestion (1-10)',  label: 'Digestion',   unit: '/10' },
+    // NOTE: exact sheet header strings below follow the established
+    // "label (unit)" convention used by every other habit here, but are
+    // unverified against the live Apps Script sheet — confirm with
+    // Logger.log before trusting these in production.
+    { key: 'Workout',           label: 'Workout',     unit: '',   type: 'checkbox' },
+    { key: 'Breathwork',        label: 'Breathwork',  unit: '',   type: 'checkbox' },
+    { key: 'Pace Points',       label: 'Pace',        unit: 'pts', invert: true },
   ];
 
   // Map column header key back to targets object key for reference line
@@ -333,6 +340,7 @@ function HabitAverages({ logs, targets }) {
     'Calories (kcal)': 'calories',
     'Stress RPE (1-10)': 'stress', 'Mood (1-10)': 'mood',
     'Energy (1-10)': 'energy', 'Digestion (1-10)': 'digestion',
+    'Workout': 'workout', 'Breathwork': 'breathwork', 'Pace Points': 'pace',
   };
 
   const activeHabits = targets?.activeHabits;
@@ -347,12 +355,18 @@ function HabitAverages({ logs, targets }) {
 
   return (
     <div style={S.habitGrid}>
-      {visibleHabits.map(({ key, label, unit, mode, bandPercent, amberBandPercent }) => {
+      {visibleHabits.map(({ key, label, unit, mode, bandPercent, amberBandPercent, type, invert }) => {
         const vals = recent.map(l => parseFloat(l[key])).filter(v => !isNaN(v));
         const avg  = vals.length ? (vals.reduce((a,b) => a+b, 0) / vals.length).toFixed(1) : '—';
         const targetKey = TARGET_KEY_MAP[key];
         const target = targets?.[targetKey];
         const pctOfTarget = target && avg !== '—' ? (parseFloat(avg) / parseFloat(target)) * 100 : null;
+
+        // Checkbox habits (workout/breathwork) are 0/1 per day — show the
+        // 30-day average as "% of days completed" rather than a raw decimal.
+        const isCheckbox = type === 'checkbox';
+        const displayValue = avg === '—' ? '—' : isCheckbox ? `${Math.round(parseFloat(avg) * 100)}%` : `${avg}${unit}`;
+        const displayTarget = target == null ? null : isCheckbox ? `${Math.round(parseFloat(target) * 100)}%` : `${target}${unit}`;
 
         let pct = null, barColor = null;
         if (pctOfTarget !== null) {
@@ -366,6 +380,11 @@ function HabitAverages({ logs, targets }) {
             const distPct  = Math.abs(pctOfTarget - 100);
             pct = Math.min(100, pctOfTarget / 2);
             barColor = distPct <= greenPct ? '#22c55e' : distPct <= amberPct ? '#F26419' : '#ef4444';
+          } else if (invert) {
+            // Invert mode: lower-than-target is good (e.g. Pace). Being at
+            // or under target is green; overshoot degrades the color.
+            pct = Math.min(100, pctOfTarget);
+            barColor = pctOfTarget <= 100 ? '#22c55e' : pctOfTarget <= 130 ? '#F26419' : '#ef4444';
           } else {
             pct = Math.min(100, pctOfTarget);
             barColor = pct >= 100 ? '#22c55e' : pct >= 70 ? '#F26419' : '#ef4444';
@@ -375,8 +394,8 @@ function HabitAverages({ logs, targets }) {
         return (
           <div key={key} style={S.habitCard}>
             <p style={S.habitLabel}>{label}</p>
-            <p style={S.habitValue}>{avg}{avg !== '—' ? unit : ''}</p>
-            {target && <p style={S.habitTarget}>Target: {target}{unit}</p>}
+            <p style={S.habitValue}>{displayValue}</p>
+            {displayTarget && <p style={S.habitTarget}>Target: {displayTarget}</p>}
             {pct !== null && (
               <div style={S.progressBar}>
                 <div style={{ ...S.progressFill, width: `${pct}%`, backgroundColor: barColor }} />
